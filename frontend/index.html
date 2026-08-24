@@ -4,10 +4,49 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EduCon — Pipeline Dashboard</title>
+<!-- Favicon: the mark's upper half only — the book and hand turn to mush at 16px. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 145'%3E%3Cpolygon fill='%2314357f' points='100,4 105.9,19.9 122.8,20.6 109.5,31.1 114.1,47.4 100,38 85.9,47.4 90.5,31.1 77.2,20.6 94.1,19.9'/%3E%3Ccircle fill='%230d3b7a' cx='44' cy='58' r='15'/%3E%3Ccircle fill='%236cc24a' cx='156' cy='58' r='15'/%3E%3Cpath fill='%231a56ab' d='M96,56 C86,88 56,96 20,88 C34,120 58,138 90,136 C95,110 96,82 96,56 Z'/%3E%3Cpath fill='%233aa85a' d='M104,56 C114,88 144,96 180,88 C166,120 142,138 110,136 C105,110 104,82 104,56 Z'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="css/dashboard.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+
+<!-- ============================================================ LOGO ========== -->
+<!-- The EduCon mark, drawn once and referenced with <use> wherever it appears, so
+     every page shows exactly the same artwork. Vector throughout: no image asset,
+     which keeps the "no CDN, no external request" rule intact. -->
+<svg width="0" height="0" class="ec-sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="ecGradBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f74d0"/><stop offset="1" stop-color="#14357f"/>
+    </linearGradient>
+    <linearGradient id="ecGradGreen" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6cc24a"/><stop offset="1" stop-color="#2b8f4c"/>
+    </linearGradient>
+
+    <symbol id="ecMark" viewBox="0 0 200 210">
+      <!-- the star: aspiration -->
+      <polygon class="ec-star" points="100,4 105.9,19.9 122.8,20.6 109.5,31.1 114.1,47.4 100,38 85.9,47.4 90.5,31.1 77.2,20.6 94.1,19.9"/>
+      <!-- two learners, arms raised toward it -->
+      <circle class="ec-head-l" cx="44" cy="58" r="15"/>
+      <circle class="ec-head-r" cx="156" cy="58" r="15"/>
+      <path fill="url(#ecGradBlue)"  d="M96,56 C86,88 56,96 20,88 C34,120 58,138 90,136 C95,110 96,82 96,56 Z"/>
+      <path fill="url(#ecGradGreen)" d="M104,56 C114,88 144,96 180,88 C166,120 142,138 110,136 C105,110 104,82 104,56 Z"/>
+      <!-- the open book, pages fanned -->
+      <path class="ec-pages"  d="M100,150 C74,133 44,126 14,133 L17,143 C46,137 76,148 100,162 C124,148 154,137 183,143 L186,133 C156,126 126,133 100,150 Z"/>
+      <path class="ec-pages2" d="M100,158 C76,143 48,136 22,142 L24,148 C50,143 78,152 100,166 C122,152 150,143 176,148 L178,142 C152,136 124,143 100,158 Z"/>
+      <path class="ec-cover-l" d="M100,166 C74,151 44,144 16,150 L24,200 C50,195 80,192 100,202 Z"/>
+      <path class="ec-cover-r" d="M100,166 C126,151 156,144 184,150 L176,200 C150,195 120,192 100,202 Z"/>
+      <!-- the supporting hand, reaching across the book -->
+      <path class="ec-hand" d="M40,204 C36,183 54,172 84,171 C112,170 138,176 157,185 C162,187 161,194 154,193 C118,187 76,194 46,206 Z"/>
+      <g class="ec-fingers" fill="none" stroke-width="2.4" stroke-linecap="round">
+        <path d="M100,178 C120,179 138,183 151,189"/>
+        <path d="M94,185 C114,185 132,188 145,193"/>
+        <path d="M86,192 C104,191 122,194 135,197"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
 
 <!-- ============================================================ LOGIN ========= -->
 <div id="loginScreen" class="login-screen" hidden>
@@ -15,11 +54,8 @@
 
   <form class="login-card" id="loginForm" autocomplete="on">
     <div class="login-brand">
-      <svg class="ec-mark" width="56" height="56" viewBox="0 0 100 100" aria-hidden="true">
-        <path class="ec-star" d="M50 4 L55 20 L72 20 L58 30 L63 46 L50 36 L37 46 L42 30 L28 20 L45 20 Z"/>
-        <path class="ec-book" d="M14 62 C 30 52, 42 52, 50 60 C 58 52, 70 52, 86 62 L86 70 C 70 62, 58 62, 50 68 C 42 62, 30 62, 14 70 Z"/>
-        <circle class="ec-hand-l" cx="34" cy="78" r="6"/>
-        <circle class="ec-hand-r" cx="66" cy="78" r="6"/>
+      <svg class="ec-mark ec-mark-login" width="64" height="67" aria-hidden="true" focusable="false">
+        <use href="#ecMark"/>
       </svg>
       <div>
         <div class="login-name">EduCon</div>
@@ -53,11 +89,8 @@
 <header class="topbar">
   <div class="topbar-top">
   <div class="brand">
-    <svg class="ec-mark brand-mark-svg" width="40" height="40" viewBox="0 0 100 100" aria-hidden="true">
-      <path class="ec-star" d="M50 4 L55 20 L72 20 L58 30 L63 46 L50 36 L37 46 L42 30 L28 20 L45 20 Z"/>
-      <path class="ec-book" d="M14 62 C 30 52, 42 52, 50 60 C 58 52, 70 52, 86 62 L86 70 C 70 62, 58 62, 50 68 C 42 62, 30 62, 14 70 Z"/>
-      <circle class="ec-hand-l" cx="34" cy="78" r="6"/>
-      <circle class="ec-hand-r" cx="66" cy="78" r="6"/>
+    <svg class="ec-mark brand-mark-svg" width="40" height="42" aria-hidden="true" focusable="false">
+      <use href="#ecMark"/>
     </svg>
     <div>
       <h1 id="pageTitle">Dashboard</h1>

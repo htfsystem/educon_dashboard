@@ -1,6 +1,6 @@
 /* EduCon Pipeline Dashboard — app shell, login, and the Ascent overview page.
    Builds on the tokens in dashboard.css; adds only brand colours drawn from the
-   EduCon logo (star gold, book blue, hand green) and the layout those pages need. */
+   EduCon logo (book blue, hand green, star navy) and the layout those pages need. */
 
 :root {
   --ec-blue-900: #0d3b7a;
@@ -12,17 +12,50 @@
   --ec-gold-300: #f3c98a;
 }
 
-/* The logo mark, recreated as SVG so it scales and themes cleanly. */
-.ec-mark { display: block; flex: none; }
-.ec-star   { fill: var(--ec-gold-500); }
-.ec-book   { fill: var(--ec-blue-700); }
-.ec-hand-l { fill: var(--ec-green-500); }
-.ec-hand-r { fill: var(--ec-blue-500); }
+/* The EduCon mark, redrawn as SVG so it scales and themes cleanly. The symbol
+   lives once at the top of index.html; these rules colour the parts that must
+   shift between light and dark. The two figures use gradients defined there. */
+.ec-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 
-@media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) .ec-book { fill: var(--ec-blue-500); }
+.ec-mark { display: block; flex: none; }
+
+.ec-star    { fill: var(--ec-star); }
+.ec-head-l  { fill: var(--ec-head-navy); }
+.ec-head-r  { fill: #6cc24a; }
+.ec-pages   { fill: var(--ec-page-dark); }
+.ec-pages2  { fill: var(--ec-page-mid); }
+.ec-cover-l { fill: var(--ec-green-500); }
+.ec-cover-r { fill: var(--ec-cover-navy); }
+.ec-hand    { fill: var(--ec-green-500); }
+.ec-fingers { stroke: var(--ec-green-600); }
+
+/* Light: the brand's own values. */
+:root {
+  --ec-star: #14357f;
+  --ec-page-dark: #2f3437;
+  --ec-page-mid: #4d5357;
+  --ec-cover-navy: #14357f;
+  --ec-head-navy: #0d3b7a;
 }
-:root[data-theme="dark"] .ec-book { fill: var(--ec-blue-500); }
+
+/* Dark: the navy cover, dark pages and star would sink into the background,
+   so those three lift while the greens and gradients stay untouched. */
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    --ec-star: #4a90e8;
+    --ec-page-dark: #d9dbdd;
+    --ec-page-mid: #9aa0a5;
+    --ec-cover-navy: #2f74d0;
+    --ec-head-navy: #2a63b8;
+  }
+}
+:root[data-theme="dark"] {
+  --ec-star: #4a90e8;
+  --ec-page-dark: #d9dbdd;
+  --ec-page-mid: #9aa0a5;
+  --ec-cover-navy: #2f74d0;
+  --ec-head-navy: #2a63b8;
+}
 
 /* ============================================================ LOGIN ========= */
 
@@ -99,7 +132,9 @@
 
 #appShell[hidden] { display: none; }
 
-.brand-mark-svg { width: 40px; height: 40px; }
+/* The mark is 200 × 210, so height tracks width rather than matching it. */
+.brand-mark-svg { width: 40px; height: 42px; }
+.ec-mark-login  { width: 64px; height: 67px; }
 
 .mainnav { display: flex; gap: 4px; flex-wrap: wrap; }
 .navlink {
