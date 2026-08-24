@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EduCon — Student Status Summary</title>
+<link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">EC</div>
+    <div>
+      <h1>Student Status Summary</h1>
+      <p class="brand-sub">EduCon approval &amp; disbursement pipeline</p>
+    </div>
+  </div>
+
+  <div class="topbar-controls">
+    <label class="field">
+      <span class="field-label">Academic year</span>
+      <select id="yearSelect" class="select"></select>
+    </label>
+
+    <label class="field">
+      <span class="field-label">Team</span>
+      <select id="teamSelect" class="select">
+        <option value="ALL">ETM + ATM</option>
+        <option value="ETM">ETM only</option>
+        <option value="ATM">ATM only</option>
+      </select>
+    </label>
+
+    <label class="field field-grow">
+      <span class="field-label">Search member</span>
+      <input id="searchInput" class="input" type="search" placeholder="Name or code…" autocomplete="off">
+    </label>
+
+    <div class="btn-group">
+      <button id="exportExcel" class="btn btn-primary" type="button">Export Excel</button>
+      <button id="exportCsv" class="btn" type="button">CSV</button>
+      <button id="refreshBtn" class="btn btn-icon" type="button" title="Refresh from database">↻</button>
+      <button id="themeBtn" class="btn btn-icon" type="button" title="Toggle theme">◐</button>
+    </div>
+  </div>
+
+  <div class="statusline">
+    <span id="dbBadge" class="badge badge-idle">Connecting…</span>
+    <span class="statusline-sep">·</span>
+    <span id="freshness" class="statusline-text">—</span>
+    <span class="statusline-sep">·</span>
+    <span class="statusline-text">Read-only access — no data is ever modified</span>
+  </div>
+</header>
+
+<main id="main" class="layout" aria-busy="true">
+
+  <section class="kpi-row" id="kpiRow" aria-label="Key metrics"></section>
+
+  <section class="panel panel-wide">
+    <div class="panel-head">
+      <div>
+        <h2>Status distribution</h2>
+        <p class="panel-sub" id="distSub">Exact student counts per application status</p>
+      </div>
+      <div class="chip-row" id="stageLegend"></div>
+    </div>
+    <div id="statusChart" class="chart"></div>
+  </section>
+
+  <section class="panel panel-wide">
+    <div class="panel-head">
+      <div>
+        <h2>Status matrix</h2>
+        <p class="panel-sub" id="matrixSub">Every team member against every database status</p>
+      </div>
+      <div class="chip-row">
+        <button class="chip chip-toggle is-on" id="heatToggle" type="button">Heatmap</button>
+        <button class="chip chip-toggle" id="zeroToggle" type="button">Hide empty rows</button>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="matrix" id="matrixTable"></table>
+    </div>
+  </section>
+
+</main>
+
+<div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>
+
+<script src="js/dashboard.js"></script>
+</body>
+</html>

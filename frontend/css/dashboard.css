@@ -1,0 +1,564 @@
+/* EduCon Pipeline Dashboard — design tokens follow the validated reference palette.
+   Light values live on bare :root; dark is redefined under both the OS media query
+   and the [data-theme] stamp so the toggle wins in either direction. */
+
+:root {
+  color-scheme: light;
+
+  --surface-1: #fcfcfb;
+  --page: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --border-strong: rgba(11, 11, 11, 0.16);
+  --wash: rgba(11, 11, 11, 0.035);
+
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --good-text: #006300;
+
+  /* Sequential blue, ordinal-safe on light (starts at step 250). */
+  --seq-1: #cde2fb;
+  --seq-2: #9ec5f4;
+  --seq-3: #6da7ec;
+  --seq-4: #3987e5;
+  --seq-5: #256abf;
+  --seq-6: #184f95;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgba(11, 11, 11, 0.04), 0 4px 12px rgba(11, 11, 11, 0.04);
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --border-strong: rgba(255, 255, 255, 0.18);
+    --wash: rgba(255, 255, 255, 0.05);
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --good-text: #0ca30c;
+
+    --seq-1: #184f95;
+    --seq-2: #1c5cab;
+    --seq-3: #256abf;
+    --seq-4: #2a78d6;
+    --seq-5: #3987e5;
+    --seq-6: #5598e7;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --page: #0d0d0d;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --wash: rgba(255, 255, 255, 0.05);
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --good-text: #0ca30c;
+
+  --seq-1: #184f95;
+  --seq-2: #1c5cab;
+  --seq-3: #256abf;
+  --seq-4: #2a78d6;
+  --seq-5: #3987e5;
+  --seq-6: #5598e7;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+h1 { font-size: 17px; }
+h2 { font-size: 15px; }
+
+/* ---------- Top bar ---------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 20px 0;
+}
+
+.brand { display: flex; align-items: center; gap: 12px; }
+
+.brand-mark {
+  width: 34px; height: 34px;
+  flex: none;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  background: var(--series-1);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.brand-sub { margin: 1px 0 0; font-size: 12px; color: var(--text-muted); }
+
+.topbar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field-grow { flex: 1 1 200px; max-width: 300px; }
+
+.field-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.select, .input {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  min-width: 150px;
+  width: 100%;
+}
+
+.select:focus-visible, .input:focus-visible, .btn:focus-visible, .chip:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 1px;
+}
+
+.btn-group { display: flex; gap: 6px; margin-left: auto; }
+
+.btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 7px 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:hover { background: var(--wash); }
+
+.btn-primary {
+  background: var(--series-1);
+  border-color: var(--series-1);
+  color: #fff;
+}
+.btn-primary:hover { filter: brightness(1.08); background: var(--series-1); }
+
+.btn-icon { padding: 7px 10px; }
+
+.statusline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 0 11px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.statusline-sep { opacity: 0.5; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+}
+
+.badge::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.badge-live { color: var(--good-text); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
+.badge-idle { color: var(--text-muted); }
+.badge-error { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 45%, transparent); }
+
+/* ---------- Layout ---------- */
+
+.layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px 20px 40px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.layout[aria-busy="true"] { opacity: 0.55; }
+
+.panel-wide, .kpi-row { grid-column: 1 / -1; }
+
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px 18px 18px;
+  min-width: 0;
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.panel-sub { margin: 3px 0 0; font-size: 12px; color: var(--text-muted); }
+
+/* ---------- KPI tiles ---------- */
+
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: 12px;
+}
+
+.kpi {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 16px 15px;
+  position: relative;
+  overflow: hidden;
+}
+
+.kpi::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--kpi-accent, var(--series-1));
+}
+
+.kpi-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.045em;
+}
+
+.kpi-value {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-top: 4px;
+  line-height: 1.1;
+}
+
+.kpi-meta { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
+
+/* ---------- Chips & legends ---------- */
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: default;
+}
+
+.chip-toggle { cursor: pointer; }
+.chip-toggle.is-on {
+  color: var(--text-primary);
+  background: var(--wash);
+  border-color: var(--border-strong);
+}
+
+.chip-swatch {
+  width: 9px; height: 9px;
+  border-radius: 2px;
+  flex: none;
+  background: var(--swatch, var(--series-1));
+}
+
+/* ---------- Charts ---------- */
+
+.chart { width: 100%; min-height: 40px; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+.tick-text { font-size: 11px; fill: var(--text-muted); }
+.label-text { font-size: 12px; fill: var(--text-secondary); }
+.value-text { font-size: 12px; fill: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+.gridline { stroke: var(--grid); stroke-width: 1; }
+.baseline { stroke: var(--axis); stroke-width: 1; }
+
+.bar { transition: opacity 0.12s ease; }
+.hit { fill: transparent; cursor: pointer; }
+.chart.dim .bar { opacity: 0.35; }
+.chart.dim .bar.active { opacity: 1; }
+
+/* ---------- Matrix table ---------- */
+
+/* The grid is its own scroll region, always shorter than the viewport — otherwise the
+   page scrolls instead of the table and the sticky header rides off the top. */
+.table-scroll {
+  overflow: auto;
+  max-height: min(620px, calc(100vh - 190px));
+  min-height: 260px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.matrix {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Every cell carries a right + bottom rule, so the matrix reads as a true grid
+   both on screen and in the exports. Numerals are centred in their column. */
+.matrix th, .matrix td {
+  padding: 7px 9px;
+  text-align: center;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--grid);
+  border-right: 1px solid var(--grid);
+}
+.matrix th:last-child, .matrix td:last-child { border-right: none; }
+
+/* Sticky stacking order, lowest to highest:
+   body cells 0 · frozen Sl/name columns 2 · team section band 3 · total row 4 ·
+   header row 5 · the header's own frozen columns 6. */
+.matrix thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--surface-1);
+  box-shadow: 0 1px 0 var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  vertical-align: bottom;
+}
+
+.matrix thead th:hover { background: var(--wash); }
+.matrix thead th .sort-arrow { color: var(--series-1); margin-left: 3px; }
+
+.col-name, .col-sl {
+  text-align: left;
+  position: sticky;
+  z-index: 2;
+  background: var(--surface-1);
+}
+.col-sl { left: 0; width: 34px; color: var(--text-muted); text-align: center; }
+.col-name { left: 34px; min-width: 178px; border-right: 1px solid var(--border-strong); }
+.matrix thead .col-name, .matrix thead .col-sl { z-index: 6; }
+
+.member-name { font-weight: 500; }
+.member-code {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 6px;
+  font-variant-numeric: normal;
+}
+
+.team-tag {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  margin-right: 7px;
+  vertical-align: 1px;
+}
+.team-ETM { color: var(--series-1); border-color: color-mix(in srgb, var(--series-1) 40%, transparent); }
+.team-ATM { color: var(--series-2); border-color: color-mix(in srgb, var(--series-2) 40%, transparent); }
+
+.matrix tbody tr:hover td { background: var(--wash); }
+.matrix tbody tr:hover .col-name, .matrix tbody tr:hover .col-sl { background: var(--wash); }
+
+.cell-zero { color: var(--text-muted); opacity: 0.45; }
+
+/* Heatmap cells carry a numeral in primary ink, so the tint is reinforcement,
+   never the only cue and never a contrast risk. */
+.heat .cell-v {
+  display: inline-block;
+  min-width: 26px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--text-primary);
+}
+
+.col-total { font-weight: 700; border-left: 1px solid var(--border-strong); text-align: center; }
+
+/* The team band parks immediately below the locked header (--head-h is measured in
+   renderMatrix), so you always know whether the row you are reading is ETM or ATM. */
+.section-row td {
+  background: var(--wash);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: left;
+  position: sticky;
+  left: 0;
+  top: var(--head-h, 0px);
+  z-index: 3;
+  box-shadow: 0 1px 0 var(--grid);
+}
+
+.total-row td {
+  font-weight: 700;
+  background: var(--surface-1);
+  border-top: 2px solid var(--border-strong);
+  border-bottom: none;
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+}
+.total-row .col-name, .total-row .col-sl { z-index: 4; }
+.total-row.sub td { font-weight: 500; color: var(--text-secondary); border-top: 1px solid var(--grid); }
+
+/* ---------- Reconciliation ---------- */
+
+.reconcile {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.rec-item { min-width: 0; }
+.rec-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.rec-value { font-size: 20px; font-weight: 600; margin-top: 2px; }
+.rec-note { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
+
+.rec-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
+.rec-ok { color: var(--good-text); }
+.rec-bad { color: var(--critical); }
+
+/* ---------- Tooltip ---------- */
+
+.tooltip {
+  position: fixed;
+  z-index: 90;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  padding: 8px 11px;
+  font-size: 12px;
+  max-width: 260px;
+}
+.tooltip[data-show="1"] { opacity: 1; }
+.tooltip-title { font-weight: 600; margin-bottom: 3px; }
+.tooltip-row { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.tooltip-row b { color: var(--text-primary); }
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 1080px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .topbar { padding: 12px 14px 0; }
+  .layout { padding: 14px 14px 32px; }
+  .btn-group { margin-left: 0; width: 100%; }
+  .field-grow { max-width: none; }
+  .kpi-value { font-size: 24px; }
+}
+
+@media print {
+  .topbar-controls, .tooltip { display: none; }
+  .panel { break-inside: avoid; box-shadow: none; }
+  .table-scroll { max-height: none; overflow: visible; }
+}
