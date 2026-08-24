@@ -235,6 +235,11 @@
       b.classList.toggle('is-active', b.dataset.page === page);
     });
 
+    // The year selector is a single element that follows the active data page,
+    // so page 1 and page 2 can never be looking at different years.
+    const slot = page === 'summary' ? $('yearSlotSummary') : $('yearSlotDashboard');
+    if (slot && $('yearField').parentElement !== slot) slot.appendChild($('yearField'));
+
     document.body.dataset.page = page;
     $('pageTitle').textContent = PAGES[page].title;
     $('pageSub').textContent = PAGES[page].sub;

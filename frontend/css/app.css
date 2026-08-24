@@ -265,8 +265,11 @@
 /* Controls that only make sense on the summary page. */
 body[data-page="dashboard"] .page-summary-only,
 body[data-page="users"] .page-summary-only { display: none; }
-body[data-page="users"] #yearSelect { display: none; }
-body[data-page="users"] .field:has(#yearSelect) { display: none; }
+
+/* With the year selector gone, the filter row holds nothing but summary-page
+   controls — so the row itself collapses on the other two pages. */
+body[data-page="dashboard"] .topbar-controls,
+body[data-page="users"] .topbar-controls { display: none; }
 
 /* An element the role cannot use is removed, not merely disabled. */
 [data-perm-denied] { display: none !important; }

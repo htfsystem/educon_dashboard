@@ -160,11 +160,6 @@
   </div><!-- /topbar-top -->
 
   <div class="topbar-controls">
-    <label class="field">
-      <span class="field-label">Academic year</span>
-      <select id="yearSelect" class="select"></select>
-    </label>
-
     <label class="field page-summary-only">
       <span class="field-label">Team</span>
       <select id="teamSelect" class="select">
@@ -218,7 +213,17 @@
         <h2>Status distribution</h2>
         <p class="panel-sub" id="distSub">Exact student counts per application status</p>
       </div>
-      <div class="chip-row" id="stageLegend"></div>
+      <div class="panel-tools">
+        <!-- The year selector lives here, and is moved into the active page's
+             panel head by app.js — one element, so both pages stay in step. -->
+        <div class="year-slot" id="yearSlotDashboard">
+          <label class="field field-year" id="yearField">
+            <span class="field-label">Academic year</span>
+            <select id="yearSelect" class="select"></select>
+          </label>
+        </div>
+        <div class="chip-row" id="stageLegend"></div>
+      </div>
     </div>
     <div id="statusChart" class="chart"></div>
   </section>
@@ -234,9 +239,12 @@
         <h2>Status matrix</h2>
         <p class="panel-sub" id="matrixSub">Every team member against every database status</p>
       </div>
-      <div class="chip-row">
-        <button class="chip chip-toggle is-on" id="heatToggle" type="button">Heatmap</button>
-        <button class="chip chip-toggle" id="zeroToggle" type="button">Hide empty rows</button>
+      <div class="panel-tools">
+        <div class="year-slot" id="yearSlotSummary"></div>
+        <div class="chip-row">
+          <button class="chip chip-toggle is-on" id="heatToggle" type="button">Heatmap</button>
+          <button class="chip chip-toggle" id="zeroToggle" type="button">Hide empty rows</button>
+        </div>
       </div>
     </div>
     <div class="table-scroll">
