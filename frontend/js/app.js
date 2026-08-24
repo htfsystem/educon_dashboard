@@ -153,14 +153,15 @@
     $('pageTitle').textContent = PAGES[page].title;
     $('pageSub').textContent = PAGES[page].sub;
 
+    // dashboard.js renders the status distribution (page 1) and the matrix (page 2),
+    // so it is booted for either data page.
+    if (page === 'dashboard' || page === 'summary') window.EduConSummary.boot();
     if (page === 'dashboard') loadOverview();
-    if (page === 'summary') window.EduConSummary.boot();
     if (page === 'users') loadUsers();
   }
 
   document.querySelectorAll('.navlink').forEach(b =>
     b.addEventListener('click', () => go(b.dataset.page)));
-  $('toSummary').addEventListener('click', () => go('summary'));
 
   // ---------- Academic years ----------
   // One year selector drives both data pages, so they can never disagree.
@@ -224,7 +225,7 @@
       ['Cohort', o.cohortTotal],
       ['Disbursed', h.disbursed],
       ['In pipeline', h.active],
-      ['Handlers', o.topMembers.length]
+      ['Assigned', o.reconciliation.assignedDistinct]
     ].map(([k, v]) => `<div class="hero-stat"><span class="v">${v}</span><span class="k">${k}</span></div>`).join('');
 
     $('ovTiles').innerHTML = [
@@ -238,108 +239,6 @@
         <div class="v">${t.v}</div>
         <div class="d">${esc(t.d)}</div>
       </div>`).join('');
-
-    // Exact statuses, never merged or renamed — only sorted by size.
-    const rows = Object.entries(o.statusTotals).sort((a, b) => b[1] - a[1]);
-    const max = Math.max(1, ...rows.map(r => r[1]));
-    $('ovBars').innerHTML = rows.map(([status, n], i) => `
-      <div class="ov-bar">
-        <span class="l" title="${esc(status)}">${esc(status)}</span>
-        <div class="track">
-          <div class="fill" style="--w:${(n / max) * 100}%; animation-delay:${i * 45}ms"></div>
-        </div>
-        <span class="n">${n}</span>
-      </div>`).join('');
-
-    const r = o.reconciliation;
-    const covered = r.cohortTotal ? r.assignedDistinct / r.cohortTotal : 0;
-    $('ovRing').innerHTML = `
-      <svg class="ring" width="118" height="118" viewBox="0 0 120 120" aria-hidden="true">
-        <circle class="bg" cx="60" cy="60" r="54"></circle>
-        <circle class="fg" cx="60" cy="60" r="54" style="--off:${339 - 339 * covered}"></circle>
-      </svg>
-      <div>
-        <div class="ring-num">${r.assignedDistinct} / ${r.cohortTotal}</div>
-        <div class="ring-legend">
-          <div class="row"><span class="sw" style="background:var(--ec-green-500)"></span>Assigned to a named handler</div>
-          <div class="row"><span class="sw" style="background:var(--wash)"></span>${r.unassigned} held only by system buckets</div>
-        </div>
-      </div>`;
-
-    $('ovHandlers').innerHTML = o.topMembers.map((m, i) => `
-      <div class="handler">
-        <span class="av" style="background:${['var(--ec-blue-700)', 'var(--ec-green-600)', 'var(--ec-gold-500)', 'var(--ec-blue-500)'][i % 4]}">${esc(initials(m.name))}</span>
-        <span class="nm">${esc(m.name)}</span>
-        <span class="ct">${m.total}</span>
-      </div>`).join('') || '<p class="panel-sub">No handler has students on record this year.</p>';
-
-    renderTrend(o.trend);
-  }
-
-  /** Cohort size per year as a hand-drawn SVG line — no chart library, per project rules. */
-  function renderTrend(trend) {
-    const host = $('ovTrend');
-    host.innerHTML = '';
-    if (!trend || !trend.length) return;
-
-    const years = [...trend].sort((a, b) => String(a.year).localeCompare(String(b.year)));
-    const total = y => Object.values(y.statuses || {}).reduce((a, b) => a + b, 0);
-    const disbursed = y => (y.statuses || {}).STUDENT_DISBURSED || 0;
-
-    const W = 900, H = 240, padL = 44, padR = 16, padT = 16, padB = 34;
-    const max = Math.max(1, ...years.map(total));
-    const x = i => padL + (i * (W - padL - padR)) / Math.max(1, years.length - 1);
-    const y = v => H - padB - (v / max) * (H - padT - padB);
-
-    const NS = 'http://www.w3.org/2000/svg';
-    const node = (tag, attrs, text) => {
-      const n = document.createElementNS(NS, tag);
-      Object.entries(attrs).forEach(([k, v]) => n.setAttribute(k, v));
-      if (text !== undefined) n.textContent = text;
-      return n;
-    };
-
-    const svg = node('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', height: H, role: 'img' });
-    svg.appendChild(node('title', {}, 'Cohort size and disbursed students by academic year'));
-
-    [0, 0.5, 1].forEach(f => {
-      svg.appendChild(node('line', {
-        x1: padL, x2: W - padR, y1: y(max * f), y2: y(max * f),
-        stroke: 'var(--grid)', 'stroke-width': 1
-      }));
-      svg.appendChild(node('text', {
-        x: padL - 8, y: y(max * f) + 4, 'text-anchor': 'end',
-        'font-size': 10, fill: 'var(--text-muted)'
-      }, Math.round(max * f)));
-    });
-
-    const path = pick => years.map((yr, i) => `${i ? 'L' : 'M'}${x(i)},${y(pick(yr))}`).join(' ');
-
-    svg.appendChild(node('path', {
-      d: `${path(total)} L${x(years.length - 1)},${H - padB} L${x(0)},${H - padB} Z`,
-      fill: 'var(--ec-blue-500)', opacity: 0.12
-    }));
-    svg.appendChild(node('path', {
-      d: path(total), fill: 'none', stroke: 'var(--ec-blue-500)',
-      'stroke-width': 2.5, 'stroke-linejoin': 'round'
-    }));
-    svg.appendChild(node('path', {
-      d: path(disbursed), fill: 'none', stroke: 'var(--ec-green-500)',
-      'stroke-width': 2.5, 'stroke-dasharray': '5 4', 'stroke-linejoin': 'round'
-    }));
-
-    years.forEach((yr, i) => {
-      svg.appendChild(node('circle', {
-        cx: x(i), cy: y(total(yr)), r: i === years.length - 1 ? 5 : 3.2,
-        fill: 'var(--ec-blue-500)'
-      })).appendChild(node('title', {}, `${yr.year}: ${total(yr)} students, ${disbursed(yr)} disbursed`));
-      svg.appendChild(node('text', {
-        x: x(i), y: H - 12, 'text-anchor': 'middle',
-        'font-size': 10, fill: 'var(--text-muted)'
-      }, String(yr.year).replace('-', '–')));
-    });
-
-    host.appendChild(svg);
   }
 
   // ---------- Page 3: accounts ----------

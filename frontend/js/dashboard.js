@@ -71,7 +71,7 @@
   const $ = id => document.getElementById(id);
   const el = {
     main: $('main'), year: $('yearSelect'), team: $('teamSelect'), search: $('searchInput'),
-    kpi: $('kpiRow'), statusChart: $('statusChart'), stageLegend: $('stageLegend'),
+    statusChart: $('statusChart'), stageLegend: $('stageLegend'),
     table: $('matrixTable'), tooltip: $('tooltip'),
     badge: $('dbBadge'), freshness: $('freshness'),
     distSub: $('distSub'), matrixSub: $('matrixSub')
@@ -216,41 +216,6 @@
       if (av > bv) return dir;
       return a.name.localeCompare(b.name);
     });
-  }
-
-  // ---------- Render: KPIs ----------
-  function renderKpis() {
-    const r = state.report;
-    const disbursedCol = COLUMNS.find(c => c.key === 'STUDENT_DISBURSED');
-    const noReqCol = COLUMNS.find(c => c.key === 'NO_REQUIREMENT_THIS_YEAR');
-
-    // Exact distinct counts (see colAssignedTotal above) — never inflated by a student
-    // having two handlers, never including pseudo-user-held students.
-    const cohort = trackedTotal(r);
-    const disbursed = colAssignedTotal(disbursedCol, r);
-    const noReq = colAssignedTotal(noReqCol, r);
-    const inProgress = cohort - disbursed - noReq;
-    const pct = n => cohort ? `${Math.round((n / cohort) * 100)}% of tracked cohort` : '—';
-
-    const tiles = [
-      { label: 'Students tracked', value: cohort, meta: `Academic year ${r.academicYear}`, accent: '--series-1' },
-      { label: 'Disbursed', value: disbursed, meta: pct(disbursed), accent: '--good' },
-      { label: 'Active in pipeline', value: inProgress, meta: pct(inProgress), accent: '--series-4' },
-      { label: 'No requirement this year', value: noReq, meta: pct(noReq), accent: '--text-muted' },
-      {
-        label: 'Assigned to a member', value: r.reconciliation.assignedDistinct,
-        meta: `${r.reconciliation.unassigned} unassigned`,
-        accent: r.reconciliation.unassigned > 0 ? '--warning' : '--good'
-      },
-      { label: 'Active members', value: r.members.filter(m => memberTotal(m) > 0).length, meta: `${r.members.length} on roster`, accent: '--series-2' }
-    ];
-
-    el.kpi.innerHTML = tiles.map(k => `
-      <div class="kpi" style="--kpi-accent: var(${k.accent})">
-        <div class="kpi-label">${k.label}</div>
-        <div class="kpi-value">${k.value.toLocaleString()}</div>
-        <div class="kpi-meta">${escapeHtml(k.meta)}</div>
-      </div>`).join('');
   }
 
   // ---------- Render: status distribution ----------
@@ -561,7 +526,6 @@
   }
 
   function renderAll() {
-    renderKpis();
     renderStatusChart();
     renderMatrix();
     tickFreshness();

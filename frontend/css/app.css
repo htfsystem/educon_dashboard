@@ -141,7 +141,7 @@ body[data-page="users"] .field:has(#yearSelect) { display: none; }
 
 /* .layout is a two-column grid; the overview's own sections manage their own
    internal columns, so each one spans the full width. */
-.hero, .ov-tiles, .ov-grid { grid-column: 1 / -1; }
+.hero, .ov-tiles { grid-column: 1 / -1; }
 
 .hero {
   position: relative; overflow: hidden; border-radius: 22px;
@@ -203,58 +203,9 @@ body[data-page="users"] .field:has(#yearSelect) { display: none; }
 }
 .ov-tile .d { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
 
-.ov-grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; }
-@media (max-width: 900px) { .ov-grid { grid-template-columns: 1fr; } }
-
-/* Animated status bars */
-.ov-bars { display: flex; flex-direction: column; gap: 11px; padding: 4px 0; }
-.ov-bar { display: grid; grid-template-columns: 168px 1fr 46px; align-items: center; gap: 12px; font-size: 12.5px; }
-.ov-bar .l { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ov-bar .track { height: 10px; border-radius: 6px; background: var(--wash); overflow: hidden; }
-.ov-bar .fill {
-  height: 100%; border-radius: 6px; width: 0;
-  background: linear-gradient(90deg, var(--ec-blue-700), var(--ec-green-500));
-  animation: bar-grow 0.95s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-}
-@keyframes bar-grow { to { width: var(--w); } }
-.ov-bar .n { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
-@media (max-width: 620px) { .ov-bar { grid-template-columns: 118px 1fr 40px; } }
-
-/* Coverage ring */
-.ring-wrap { display: flex; align-items: center; gap: 22px; padding: 8px 0; flex-wrap: wrap; }
-.ring { transform: rotate(-90deg); flex: none; }
-.ring circle { fill: none; stroke-width: 14; }
-.ring .bg { stroke: var(--wash); }
-.ring .fg {
-  stroke: var(--ec-green-500); stroke-linecap: round;
-  stroke-dasharray: 339; stroke-dashoffset: 339;
-  animation: ring-draw 1.2s ease forwards 0.15s;
-}
-@keyframes ring-draw { to { stroke-dashoffset: var(--off); } }
-.ring-num { font-size: 25px; font-weight: 750; font-variant-numeric: tabular-nums; color: var(--text-primary); }
-.ring-legend { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; margin-top: 8px; }
-.ring-legend .row { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); }
-.ring-legend .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
-
-/* Busiest handlers */
-.handlers { display: flex; flex-wrap: wrap; gap: 10px; }
-.handler {
-  display: flex; align-items: center; gap: 10px;
-  border: 1px solid var(--border); border-radius: 999px;
-  padding: 6px 14px 6px 6px; font-size: 13px; background: var(--surface-1);
-}
-.handler .av {
-  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
-  font-size: 10px; font-weight: 700; color: #fff; flex: none;
-}
-.handler .nm { color: var(--text-primary); font-weight: 500; }
-.handler .ct { color: var(--text-muted); font-variant-numeric: tabular-nums; }
-
 @media (prefers-reduced-motion: reduce) {
   .hero-glow, .live-dot, .login-aura { animation: none; }
   .login-card { animation: none; }
-  .ov-bar .fill { animation: none; width: var(--w); }
-  .ring .fg { animation: none; stroke-dashoffset: var(--off); }
 }
 
 /* ============================================================ USERS ========= */

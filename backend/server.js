@@ -199,18 +199,7 @@ app.get('/api/overview', auth.requirePermission('view:dashboard'), route(async r
     academicYear: year,
     cohortTotal: report.reconciliation.cohortTotal,
     headline: { disbursed, active, attention, dormant },
-    statusTotals: s,
-    reconciliation: report.reconciliation,
-    // Busiest handlers, for the overview's workload strip.
-    topMembers: [...report.members]
-      .map(m => ({
-        name: m.name, loginId: m.loginId, team: m.team,
-        total: Object.values(m.statuses).reduce((a, b) => a + b, 0)
-      }))
-      .filter(m => m.total > 0)
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 8),
-    trend: await pipeline.getYearTrend(pool)
+    reconciliation: report.reconciliation
   };
 }));
 
