@@ -303,7 +303,6 @@
   function renderOverview() {
     const o = state.overview;
     const h = o.headline;
-    const pct = n => (o.cohortTotal ? Math.round((n / o.cohortTotal) * 100) : 0);
 
     $('heroLive').textContent = `Live · educon_prod · ${o.academicYear}`;
     $('heroHeadline').innerHTML =
@@ -318,18 +317,6 @@
       ['In pipeline', h.active],
       ['Assigned', o.reconciliation.assignedDistinct]
     ].map(([k, v]) => `<div class="hero-stat"><span class="v">${v}</span><span class="k">${k}</span></div>`).join('');
-
-    $('ovTiles').innerHTML = [
-      { k: 'Students tracked', v: o.cohortTotal, d: `Distinct records for ${o.academicYear}`, tone: 'var(--ec-blue-500)' },
-      { k: 'Disbursed',        v: h.disbursed,   d: `${pct(h.disbursed)}% of the cohort`,     tone: 'var(--ec-green-500)' },
-      { k: 'Active in pipeline', v: h.active,    d: 'Between creation and final approval',    tone: 'var(--ec-gold-500)' },
-      { k: 'Needs attention',  v: h.attention,   d: 'Change required or rejected',            tone: 'var(--critical)' }
-    ].map(t => `
-      <div class="ov-tile" style="--tone:${t.tone}">
-        <div class="k">${esc(t.k)}</div>
-        <div class="v">${t.v}</div>
-        <div class="d">${esc(t.d)}</div>
-      </div>`).join('');
   }
 
   // ---------- Page 3: accounts ----------

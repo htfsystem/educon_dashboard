@@ -276,9 +276,9 @@ body[data-page="users"] .topbar-controls { display: none; }
 
 /* ================================================= PAGE 1 · ASCENT HERO ===== */
 
-/* .layout is a two-column grid; the overview's own sections manage their own
-   internal columns, so each one spans the full width. */
-.hero, .ov-tiles { grid-column: 1 / -1; }
+/* .layout is a two-column grid; the hero lays out its own internals, so it
+   spans the full width. */
+.hero { grid-column: 1 / -1; }
 
 .hero {
   position: relative; overflow: hidden; border-radius: 22px;
@@ -321,24 +321,6 @@ body[data-page="users"] .topbar-controls { display: none; }
 .hero-stat { display: flex; flex-direction: column; gap: 3px; }
 .hero-stat .v { font-size: 26px; font-weight: 750; font-variant-numeric: tabular-nums; }
 .hero-stat .k { font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase; color: #a8c4ec; }
-
-/* Headline tiles */
-.ov-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
-.ov-tile {
-  position: relative; overflow: hidden;
-  background: var(--surface-1); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow);
-}
-.ov-tile::after {
-  content: ""; position: absolute; right: -28px; top: -28px;
-  width: 96px; height: 96px; border-radius: 50%; opacity: 0.13; background: var(--tone, var(--ec-blue-500));
-}
-.ov-tile .k { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
-.ov-tile .v {
-  font-size: 32px; font-weight: 750; margin-top: 6px;
-  font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--text-primary);
-}
-.ov-tile .d { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
 
 @media (prefers-reduced-motion: reduce) {
   .hero-glow, .live-dot, .login-aura { animation: none; }
