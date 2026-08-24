@@ -3,19 +3,72 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EduCon — Student Status Summary</title>
+<title>EduCon — Pipeline Dashboard</title>
 <link rel="stylesheet" href="css/dashboard.css">
+<link rel="stylesheet" href="css/app.css">
 </head>
 <body>
 
+<!-- ============================================================ LOGIN ========= -->
+<div id="loginScreen" class="login-screen" hidden>
+  <div class="login-aura" aria-hidden="true"></div>
+
+  <form class="login-card" id="loginForm" autocomplete="on">
+    <div class="login-brand">
+      <svg class="ec-mark" width="56" height="56" viewBox="0 0 100 100" aria-hidden="true">
+        <path class="ec-star" d="M50 4 L55 20 L72 20 L58 30 L63 46 L50 36 L37 46 L42 30 L28 20 L45 20 Z"/>
+        <path class="ec-book" d="M14 62 C 30 52, 42 52, 50 60 C 58 52, 70 52, 86 62 L86 70 C 70 62, 58 62, 50 68 C 42 62, 30 62, 14 70 Z"/>
+        <circle class="ec-hand-l" cx="34" cy="78" r="6"/>
+        <circle class="ec-hand-r" cx="66" cy="78" r="6"/>
+      </svg>
+      <div>
+        <div class="login-name">EduCon</div>
+        <div class="login-tag">P.R.I.D.E. thru EduCon</div>
+      </div>
+    </div>
+
+    <h1 class="login-title">Sign in to the pipeline dashboard</h1>
+    <p class="login-sub">Read-only reporting over <b>educon_prod</b>. No student data is ever modified.</p>
+
+    <label class="login-field">
+      <span>Username</span>
+      <input id="loginUser" name="username" type="text" autocomplete="username" required autofocus>
+    </label>
+
+    <label class="login-field">
+      <span>Password</span>
+      <input id="loginPass" name="password" type="password" autocomplete="current-password" required>
+    </label>
+
+    <p class="login-error" id="loginError" role="alert" hidden></p>
+
+    <button class="login-btn" id="loginBtn" type="submit">Sign in</button>
+    <p class="login-foot">Dashboard accounts are separate from EduCon student logins.</p>
+  </form>
+</div>
+
+<!-- ============================================================ APP SHELL ===== -->
+<div id="appShell" hidden>
+
 <header class="topbar">
   <div class="brand">
-    <div class="brand-mark">EC</div>
+    <svg class="ec-mark brand-mark-svg" width="40" height="40" viewBox="0 0 100 100" aria-hidden="true">
+      <path class="ec-star" d="M50 4 L55 20 L72 20 L58 30 L63 46 L50 36 L37 46 L42 30 L28 20 L45 20 Z"/>
+      <path class="ec-book" d="M14 62 C 30 52, 42 52, 50 60 C 58 52, 70 52, 86 62 L86 70 C 70 62, 58 62, 50 68 C 42 62, 30 62, 14 70 Z"/>
+      <circle class="ec-hand-l" cx="34" cy="78" r="6"/>
+      <circle class="ec-hand-r" cx="66" cy="78" r="6"/>
+    </svg>
     <div>
-      <h1>Student Status Summary</h1>
-      <p class="brand-sub">EduCon approval &amp; disbursement pipeline</p>
+      <h1 id="pageTitle">Dashboard</h1>
+      <p class="brand-sub" id="pageSub">EduCon approval &amp; disbursement pipeline</p>
     </div>
   </div>
+
+  <nav class="mainnav" id="mainNav" aria-label="Sections">
+    <button class="navlink is-active" data-page="dashboard" type="button">Dashboard</button>
+    <button class="navlink" data-page="summary" type="button">Student Status Summary</button>
+    <button class="navlink" data-page="users" data-perm="manage:users" type="button" hidden>Users</button>
+  </nav>
 
   <div class="topbar-controls">
     <label class="field">
@@ -23,7 +76,7 @@
       <select id="yearSelect" class="select"></select>
     </label>
 
-    <label class="field">
+    <label class="field page-summary-only">
       <span class="field-label">Team</span>
       <select id="teamSelect" class="select">
         <option value="ALL">ETM + ATM</option>
@@ -32,16 +85,25 @@
       </select>
     </label>
 
-    <label class="field field-grow">
+    <label class="field field-grow page-summary-only">
       <span class="field-label">Search member</span>
       <input id="searchInput" class="input" type="search" placeholder="Name or code…" autocomplete="off">
     </label>
 
     <div class="btn-group">
-      <button id="exportExcel" class="btn btn-primary" type="button">Export Excel</button>
-      <button id="exportCsv" class="btn" type="button">CSV</button>
+      <button id="exportExcel" class="btn btn-primary page-summary-only" data-perm="export" type="button">Export Excel</button>
+      <button id="exportCsv" class="btn page-summary-only" data-perm="export" type="button">CSV</button>
       <button id="refreshBtn" class="btn btn-icon" type="button" title="Refresh from database">↻</button>
       <button id="themeBtn" class="btn btn-icon" type="button" title="Toggle theme">◐</button>
+    </div>
+
+    <div class="usermenu">
+      <span class="user-avatar" id="userAvatar">–</span>
+      <div class="user-meta">
+        <span class="user-name" id="userName">—</span>
+        <span class="user-role" id="userRole">—</span>
+      </div>
+      <button class="btn btn-icon" id="logoutBtn" type="button" title="Sign out">⏻</button>
     </div>
   </div>
 
@@ -54,7 +116,71 @@
   </div>
 </header>
 
-<main id="main" class="layout" aria-busy="true">
+<!-- ---------------------------------------------------- PAGE 1 · DASHBOARD --- -->
+<main id="pageDashboard" class="layout page is-active" aria-busy="true">
+
+  <section class="hero">
+    <div class="hero-glow" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <div class="hero-top">
+        <span class="hero-eyebrow">Executive overview</span>
+        <span class="hero-live"><i class="live-dot"></i><span id="heroLive">Live · educon_prod</span></span>
+      </div>
+      <h2 class="hero-h" id="heroHeadline">Loading the pipeline…</h2>
+      <p class="hero-sub" id="heroSub">Every student's position in the approval and disbursement pipeline, for the selected academic year.</p>
+      <div class="hero-stats" id="heroStats"></div>
+    </div>
+  </section>
+
+  <section class="ov-tiles" id="ovTiles" aria-label="Headline figures"></section>
+
+  <section class="ov-grid">
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Status distribution</h2>
+          <p class="panel-sub">Exact student counts per application status</p>
+        </div>
+      </div>
+      <div class="ov-bars" id="ovBars"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>Coverage</h2>
+          <p class="panel-sub">How much of the cohort a named handler owns</p>
+        </div>
+      </div>
+      <div class="ring-wrap" id="ovRing"></div>
+    </div>
+  </section>
+
+  <section class="panel panel-wide">
+    <div class="panel-head">
+      <div>
+        <h2>Seven-year trend</h2>
+        <p class="panel-sub">Cohort size and disbursement across every academic year on record</p>
+      </div>
+    </div>
+    <div id="ovTrend" class="chart"></div>
+  </section>
+
+  <section class="panel panel-wide">
+    <div class="panel-head">
+      <div>
+        <h2>Busiest handlers</h2>
+        <p class="panel-sub">Highest caseloads this year</p>
+      </div>
+      <button class="chip chip-toggle" id="toSummary" type="button">View full summary →</button>
+    </div>
+    <div class="handlers" id="ovHandlers"></div>
+  </section>
+
+</main>
+
+<!-- --------------------------------------- PAGE 2 · STUDENT STATUS SUMMARY --- -->
+<main id="main" class="layout page" aria-busy="true">
 
   <section class="kpi-row" id="kpiRow" aria-label="Key metrics"></section>
 
@@ -87,8 +213,63 @@
 
 </main>
 
+<!-- -------------------------------------------------------- PAGE 3 · USERS --- -->
+<main id="pageUsers" class="layout page">
+  <section class="panel panel-wide">
+    <div class="panel-head">
+      <div>
+        <h2>Dashboard accounts</h2>
+        <p class="panel-sub">These accounts are stored locally and are unrelated to EduCon student logins.</p>
+      </div>
+      <button class="btn btn-primary" id="addUserBtn" type="button">Add user</button>
+    </div>
+    <div class="table-scroll">
+      <table class="usertable" id="userTable"></table>
+    </div>
+  </section>
+
+  <section class="panel panel-wide">
+    <div class="panel-head">
+      <div>
+        <h2>Recent sign-ins</h2>
+        <p class="panel-sub">The last 50 login attempts, successful or not</p>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="usertable" id="loginTable"></table>
+    </div>
+  </section>
+</main>
+
+</div><!-- /appShell -->
+
+<!-- Add / edit user -->
+<dialog id="userDialog" class="dialog">
+  <form method="dialog" id="userForm">
+    <h3 id="userDialogTitle">Add user</h3>
+    <label class="login-field"><span>Username</span>
+      <input id="uUsername" type="text" required></label>
+    <label class="login-field"><span>Full name</span>
+      <input id="uFullName" type="text" required></label>
+    <label class="login-field"><span>Role</span>
+      <select id="uRole" class="select">
+        <option value="viewer">Viewer — read both pages</option>
+        <option value="manager">Manager — read + export</option>
+        <option value="admin">Admin — everything + manage users</option>
+      </select></label>
+    <label class="login-field"><span id="uPassLabel">Password (min 8 characters)</span>
+      <input id="uPassword" type="password"></label>
+    <p class="login-error" id="userFormError" role="alert" hidden></p>
+    <div class="dialog-actions">
+      <button class="btn" value="cancel" type="submit">Cancel</button>
+      <button class="btn btn-primary" id="userSaveBtn" value="save" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>
 
 <script src="js/dashboard.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

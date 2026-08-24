@@ -11,14 +11,24 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const mysql = require('mysql2/promise');
+const cookieParser = require('cookie-parser');
 
 const pipeline = require('./services/pipelineService');
+const auth = require('./services/authService');
 
 const app = express();
 const PORT = process.env.PORT || 3007;
 
+// Behind Render's load balancer, so req.ip and secure cookies read the real protocol.
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser());
+app.use(auth.attachUser);
+
+// Static assets are public; the login page has to load before anyone has a session.
+// Every /api route below that carries data is guarded individually.
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 const pool = mysql.createPool({
@@ -66,6 +76,78 @@ async function requireYear(req) {
   return year;
 }
 
+// ---------------------------------------------------------------- authentication
+// Dashboard accounts live in a local SQLite file. educon_prod holds no dashboard
+// credentials and is still only ever read from.
+
+auth.open();
+
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+  const user = auth.verify(username, password, req.ip);
+
+  if (!user) {
+    console.log(`✗ login failed — ${username}`);
+    return res.status(401).json({ error: 'Incorrect username or password' });
+  }
+
+  res.cookie(auth.SESSION_COOKIE, auth.issueToken(user), {
+    httpOnly: true,
+    sameSite: 'lax',
+    // Render terminates TLS ahead of the app, so trust the proxy's protocol header.
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: auth.SESSION_TTL_MS
+  });
+  console.log(`✓ login — ${user.username} (${user.role})`);
+  res.json({ user });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie(auth.SESSION_COOKIE);
+  res.json({ ok: true });
+});
+
+/** Who am I? The frontend calls this on load to decide login vs dashboard. */
+app.get('/api/auth/me', (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Not signed in' });
+  res.json({ user: req.user });
+});
+
+// ---------------------------------------------------------------- user management
+
+app.get('/api/users', auth.requirePermission('manage:users'),
+  route(async () => ({ users: auth.listUsers(), roles: auth.ROLES })));
+
+app.post('/api/users', auth.requirePermission('manage:users'), (req, res) => {
+  try {
+    res.json({ user: auth.createUser(req.body || {}) });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch('/api/users/:id', auth.requirePermission('manage:users'), (req, res) => {
+  try {
+    res.json({ user: auth.updateUser(Number(req.params.id), req.body || {}) });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/users/:id', auth.requirePermission('manage:users'), (req, res) => {
+  try {
+    auth.deleteUser(Number(req.params.id));
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/login-history', auth.requirePermission('manage:users'),
+  route(async () => ({ history: auth.loginHistory(50) })));
+
+// ---------------------------------------------------------------- pipeline data
+
 app.get('/api/health', route(async () => {
   const [[row]] = await pool.query('SELECT 1 AS ok');
   return {
@@ -77,22 +159,60 @@ app.get('/api/health', route(async () => {
   };
 }));
 
-app.get('/api/years', route(async () => {
+app.get('/api/years', auth.requirePermission('view:dashboard'), route(async () => {
   yearCache.value = await pipeline.getAcademicYears(pool);
   yearCache.at = Date.now();
   return { years: yearCache.value };
 }));
 
 /** The full dashboard payload for one academic year. */
-app.get('/api/report', route(async req => {
+app.get('/api/report', auth.requirePermission('view:summary'), route(async req => {
   const year = await requireYear(req);
   return pipeline.getYearReport(pool, year);
 }));
 
 /** Totals per status across every academic year, for the trend chart. */
-app.get('/api/trend', route(async () => ({
+app.get('/api/trend', auth.requirePermission('view:dashboard'), route(async () => ({
   trend: await pipeline.getYearTrend(pool)
 })));
+
+/**
+ * Page 1 — the executive overview. Derived from the same getYearReport() payload the
+ * summary page uses, so the two pages can never disagree about a number.
+ */
+app.get('/api/overview', auth.requirePermission('view:dashboard'), route(async req => {
+  const year = await requireYear(req);
+  const report = await pipeline.getYearReport(pool, year);
+  const s = report.statusTotals;
+  const at = k => s[k] || 0;
+
+  // Named stages for the headline tiles. Every figure is still a sum of exact
+  // statuses — nothing is normalised or renamed (see CLAUDE.md).
+  const disbursed = at('STUDENT_DISBURSED');
+  const active = at('CREATED') + at('SUBMITTED') + at('REAPPLICATION_SUBMITTED')
+    + at('SCRUTINY_DONE') + at('FIRST_LEVEL_APPROVED') + at('FINAL_LEVEL_APPROVED')
+    + at('BUDGET_PENDING');
+  const attention = at('CHANGE_REQUIRED') + at('REJECTED');
+  const dormant = at('NO_REQUIREMENT_THIS_YEAR') + at('REACHED_CAREER_POINT') + at('CASE_CLOSED');
+
+  return {
+    academicYear: year,
+    cohortTotal: report.reconciliation.cohortTotal,
+    headline: { disbursed, active, attention, dormant },
+    statusTotals: s,
+    reconciliation: report.reconciliation,
+    // Busiest handlers, for the overview's workload strip.
+    topMembers: [...report.members]
+      .map(m => ({
+        name: m.name, loginId: m.loginId, team: m.team,
+        total: Object.values(m.statuses).reduce((a, b) => a + b, 0)
+      }))
+      .filter(m => m.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8),
+    trend: await pipeline.getYearTrend(pool)
+  };
+}));
 
 // Dashboard display columns. Mirrors public/js/dashboard.js COLUMNS — each column
 // sums one or more exact DB statuses (see pipelineService.js / CLAUDE.md for the 13
@@ -112,7 +232,7 @@ const EXPORT_COLUMNS = [
 const colSum = (col, statusMap) => col.statuses.reduce((n, s) => n + (statusMap[s] || 0), 0);
 
 /** Server-rendered CSV of the matrix, so export works without any client library. */
-app.get('/api/export.csv', async (req, res) => {
+app.get('/api/export.csv', auth.requirePermission('export'), async (req, res) => {
   try {
     const year = await requireYear(req);
     const report = await pipeline.getYearReport(pool, year);

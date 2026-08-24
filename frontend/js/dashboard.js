@@ -154,11 +154,15 @@
       el.badge.textContent = health.status === 'healthy'
         ? `Live · ${health.database}` : 'Database unreachable';
 
-      el.year.innerHTML = years
-        .map(y => `<option value="${y.year}">${y.year}</option>`)
-        .join('');
+      // The app shell fills this selector before either data page opens; honour a
+      // year the user already picked rather than snapping back to the newest one.
+      if (!el.year.options.length) {
+        el.year.innerHTML = years
+          .map(y => `<option value="${y.year}">${y.year}</option>`)
+          .join('');
+      }
 
-      state.year = years[0].year;
+      state.year = el.year.value || years[0].year;
       el.year.value = state.year;
 
       await loadYear();
@@ -623,5 +627,14 @@
   setInterval(tickFreshness, 10000);
   setInterval(() => { if (!document.hidden) loadYear(); }, 120000);
 
-  boot();
+  // The app shell owns navigation and decides when the summary page is first shown,
+  // so booting is deferred rather than firing on script load.
+  window.EduConSummary = {
+    booted: false,
+    boot() {
+      if (this.booted) return;
+      this.booted = true;
+      boot();
+    }
+  };
 })();

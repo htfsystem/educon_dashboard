@@ -1,3 +1,6 @@
 node_modules/
 .env
 *.log
+
+# Local sign-in accounts and the session signing key — never commit these.
+data/
