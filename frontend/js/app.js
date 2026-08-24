@@ -308,16 +308,24 @@
   });
 
   // ---------- Page 1: executive overview ----------
+  // Every number in the hero is read from the selected year's payload, so the
+  // year selector in the Status distribution panel drives this section too.
 
   async function loadOverview() {
     if (!state.year) return;
     const page = $('pageDashboard');
     page.setAttribute('aria-busy', 'true');
 
+    // The previous year's figures must not sit under the new year's label while
+    // the request is in flight — that reads as live data and is not.
+    $('heroLive').textContent = `Loading · ${state.year}`;
+    $('heroHeadline').textContent = 'Loading the pipeline…';
+
     try {
       state.overview = await api(`/api/overview?year=${encodeURIComponent(state.year)}`);
       renderOverview();
     } catch (error) {
+      $('heroLive').textContent = 'Not connected';
       $('heroHeadline').textContent = 'Could not load the pipeline';
       $('heroSub').textContent = error.message;
     } finally {
@@ -328,21 +336,24 @@
   function renderOverview() {
     const o = state.overview;
     const h = o.headline;
+    const n = v => Number(v ?? 0).toLocaleString();
+    const pct = v => (o.cohortTotal ? Math.round((v / o.cohortTotal) * 100) : 0);
 
     $('heroLive').textContent = `Live · educon_prod · ${o.academicYear}`;
     $('heroHeadline').innerHTML =
-      `${o.cohortTotal} students tracked, <em>${h.disbursed} disbursed</em> so far.`;
+      `${n(o.cohortTotal)} students tracked, <em>${n(h.disbursed)} disbursed</em> so far.`;
     $('heroSub').textContent =
-      `Academic year ${o.academicYear}. ${h.active} students are still moving through the ` +
-      `pipeline and ${o.reconciliation.assignedDistinct} of the cohort are held by a named handler.`;
-
-    $('heroStats').innerHTML = [
-      ['Cohort', o.cohortTotal],
-      ['Disbursed', h.disbursed],
-      ['In pipeline', h.active],
-      ['Assigned', o.reconciliation.assignedDistinct]
-    ].map(([k, v]) => `<div class="hero-stat"><span class="v">${v}</span><span class="k">${k}</span></div>`).join('');
+      `Academic year ${o.academicYear}. ${n(h.disbursed)} of ${n(o.cohortTotal)} students ` +
+      `(${pct(h.disbursed)}%) have been disbursed, ${n(h.active)} are still moving through ` +
+      `the pipeline, and ${n(o.reconciliation.assignedDistinct)} of the cohort are held by ` +
+      `a named handler.`;
   }
+
+  // The matrix auto-refreshes every two minutes; the hero is refreshed on the
+  // same cadence so the two can never show figures from different moments.
+  setInterval(() => {
+    if (state.page === 'dashboard' && state.user && !document.hidden) loadOverview();
+  }, 120000);
 
   // ---------- Page 3: accounts ----------
 

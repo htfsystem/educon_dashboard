@@ -367,12 +367,8 @@ body[data-page="users"] .topbar-controls { display: none; }
   letter-spacing: -0.02em; margin: 26px 0 10px; max-width: 20ch; text-wrap: balance;
 }
 .hero-h em { font-style: normal; color: var(--ec-gold-300); }
-.hero-sub { color: #cfdff8; font-size: 14.5px; line-height: 1.6; max-width: 56ch; margin: 0 0 26px; }
-
-.hero-stats { display: flex; gap: 28px; flex-wrap: wrap; }
-.hero-stat { display: flex; flex-direction: column; gap: 3px; }
-.hero-stat .v { font-size: 26px; font-weight: 750; font-variant-numeric: tabular-nums; }
-.hero-stat .k { font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase; color: #a8c4ec; }
+/* Nothing follows the sub now, so it carries no trailing margin of its own. */
+.hero-sub { color: #cfdff8; font-size: 14.5px; line-height: 1.6; max-width: 62ch; margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .hero-glow, .live-dot, .login-aura { animation: none; }
