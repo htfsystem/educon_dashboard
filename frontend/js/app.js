@@ -61,6 +61,8 @@
   function signedOut() {
     state.user = null;
     state.overview = null;
+    $('userMenuPanel').hidden = true;
+    $('userMenuBtn').setAttribute('aria-expanded', 'false');
     showLogin();
     return null;
   }
@@ -73,6 +75,11 @@
     $('userName').textContent = user.fullName;
     $('userRole').textContent = user.role;
     $('userAvatar').textContent = initials(user.fullName);
+    $('userAvatarLg').textContent = initials(user.fullName);
+    $('userNameFull').textContent = user.fullName;
+    $('userHandle').textContent = `@${user.username} · ${user.role}`;
+    $('setName').textContent = user.fullName;
+    $('setRole').textContent = user.role;
 
     // Anything the role cannot use is taken out of the page entirely.
     document.querySelectorAll('[data-perm]').forEach(node => {
@@ -125,7 +132,86 @@
     }
   });
 
+  // ---------- Profile menu ----------
+  // One menu, rendered once in the shell, so it is identical on every page.
+
+  const menuBtn = $('userMenuBtn');
+  const menuPanel = $('userMenuPanel');
+
+  function menuOpen() { return !menuPanel.hidden; }
+
+  function openMenu() {
+    describeTheme();
+    menuPanel.hidden = false;
+    menuBtn.setAttribute('aria-expanded', 'true');
+    menuPanel.querySelector('.usermenu-item:not([hidden])')?.focus();
+  }
+
+  function closeMenu({ refocus = false } = {}) {
+    menuPanel.hidden = true;
+    menuBtn.setAttribute('aria-expanded', 'false');
+    if (refocus) menuBtn.focus();
+  }
+
+  /** Keeps the theme row's hint honest about what a click will do. */
+  function describeTheme() {
+    const mode = window.EduConSummary.themeMode();
+    $('themeHint').textContent = mode === 'system'
+      ? `system · ${window.EduConSummary.isDark() ? 'dark' : 'light'}`
+      : mode;
+  }
+
+  menuBtn.addEventListener('click', () => (menuOpen() ? closeMenu() : openMenu()));
+
+  document.addEventListener('click', e => {
+    if (menuOpen() && !$('userMenu').contains(e.target)) closeMenu();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && menuOpen()) closeMenu({ refocus: true });
+  });
+
+  // Arrow keys walk the menu once it is open.
+  menuPanel.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const items = [...menuPanel.querySelectorAll('.usermenu-item:not([hidden])')];
+    const next = items.indexOf(document.activeElement) + (e.key === 'ArrowDown' ? 1 : -1);
+    items[(next + items.length) % items.length]?.focus();
+  });
+
+  // Refresh and theme keep their own handlers elsewhere; the menu only closes after.
+  ['refreshBtn', 'themeBtn'].forEach(id =>
+    $(id).addEventListener('click', () => { describeTheme(); closeMenu(); }));
+
+  $('manageUsersBtn').addEventListener('click', () => { closeMenu(); go('users'); });
+
+  document.addEventListener('educon:theme', describeTheme);
+
+  // ---------- Settings ----------
+
+  const settingsDialog = $('settingsDialog');
+
+  function paintThemeChoice() {
+    const mode = window.EduConSummary.themeMode();
+    document.querySelectorAll('#themeChoice .segmented-btn').forEach(b =>
+      b.setAttribute('aria-checked', String(b.dataset.themeMode === mode)));
+  }
+
+  $('settingsBtn').addEventListener('click', () => {
+    closeMenu();
+    paintThemeChoice();
+    settingsDialog.showModal();
+  });
+
+  document.querySelectorAll('#themeChoice .segmented-btn').forEach(btn =>
+    btn.addEventListener('click', () => {
+      window.EduConSummary.setTheme(btn.dataset.themeMode);
+      paintThemeChoice();
+    }));
+
   $('logoutBtn').addEventListener('click', async () => {
+    closeMenu();
     await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
     signedOut();
   });

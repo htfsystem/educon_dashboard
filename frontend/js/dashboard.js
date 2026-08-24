@@ -562,19 +562,52 @@
     renderMatrix();
   });
 
-  $('themeBtn').addEventListener('click', () => {
+  // ---------- Theme ----------
+  // The profile menu toggles, the settings dialog sets an explicit mode; both go
+  // through here so the stored preference and the SVG re-render stay in step.
+
+  /** 'light' | 'dark' | 'system' — what the user chose, not what is showing. */
+  function themeMode() {
+    return document.documentElement.getAttribute('data-theme') || 'system';
+  }
+
+  /** Whether dark is actually on screen right now. */
+  function isDark() {
+    const mode = themeMode();
+    return mode === 'dark' ||
+      (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+
+  function setTheme(mode) {
     const root = document.documentElement;
-    const dark = root.getAttribute('data-theme') === 'dark' ||
-      (!root.hasAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
-    root.setAttribute('data-theme', dark ? 'light' : 'dark');
-    try { localStorage.setItem('educon-theme', dark ? 'light' : 'dark'); } catch { /* private mode */ }
+    if (mode === 'system') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', mode);
+
+    try {
+      if (mode === 'system') localStorage.removeItem('educon-theme');
+      else localStorage.setItem('educon-theme', mode);
+    } catch { /* private mode */ }
+
+    // Charts bake theme colours into their SVG, so they must be redrawn.
     if (state.report) renderAll();
-  });
+    document.dispatchEvent(new CustomEvent('educon:theme', { detail: { mode, dark: isDark() } }));
+  }
+
+  $('themeBtn').addEventListener('click', () => setTheme(isDark() ? 'light' : 'dark'));
 
   try {
     const saved = localStorage.getItem('educon-theme');
-    if (saved) document.documentElement.setAttribute('data-theme', saved);
+    if (saved === 'light' || saved === 'dark') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
   } catch { /* storage unavailable */ }
+
+  // A 'system' preference must follow the OS while the page is open.
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (themeMode() !== 'system') return;
+    if (state.report) renderAll();
+    document.dispatchEvent(new CustomEvent('educon:theme', { detail: { mode: 'system', dark: isDark() } }));
+  });
 
   let resizeTimer;
   addEventListener('resize', () => {
@@ -599,6 +632,9 @@
       if (this.booted) return;
       this.booted = true;
       boot();
-    }
+    },
+    setTheme,
+    themeMode,
+    isDark
   };
 })();

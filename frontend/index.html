@@ -51,6 +51,7 @@
 <div id="appShell" hidden>
 
 <header class="topbar">
+  <div class="topbar-top">
   <div class="brand">
     <svg class="ec-mark brand-mark-svg" width="40" height="40" viewBox="0 0 100 100" aria-hidden="true">
       <path class="ec-star" d="M50 4 L55 20 L72 20 L58 30 L63 46 L50 36 L37 46 L42 30 L28 20 L45 20 Z"/>
@@ -69,6 +70,61 @@
     <button class="navlink" data-page="summary" type="button">Student Status Summary</button>
     <button class="navlink" data-page="users" data-perm="manage:users" type="button" hidden>Users</button>
   </nav>
+
+  <!-- Profile menu — top right, present on every page -->
+  <div class="usermenu" id="userMenu">
+    <button class="usermenu-trigger" id="userMenuBtn" type="button"
+            aria-haspopup="menu" aria-expanded="false" aria-controls="userMenuPanel">
+      <span class="user-avatar" id="userAvatar">–</span>
+      <span class="user-meta">
+        <span class="user-name" id="userName">—</span>
+        <span class="user-role" id="userRole">—</span>
+      </span>
+      <span class="usermenu-caret" aria-hidden="true">▾</span>
+    </button>
+
+    <div class="usermenu-panel" id="userMenuPanel" role="menu" aria-labelledby="userMenuBtn" hidden>
+      <div class="usermenu-head">
+        <span class="user-avatar user-avatar-lg" id="userAvatarLg">–</span>
+        <div>
+          <div class="user-name" id="userNameFull">—</div>
+          <div class="usermenu-handle" id="userHandle">—</div>
+        </div>
+      </div>
+
+      <div class="usermenu-sep"></div>
+
+      <button class="usermenu-item" id="refreshBtn" role="menuitem" type="button">
+        <span class="usermenu-ico" aria-hidden="true">↻</span>
+        <span class="usermenu-label">Refresh data</span>
+        <span class="usermenu-hint">from database</span>
+      </button>
+
+      <button class="usermenu-item" id="themeBtn" role="menuitem" type="button">
+        <span class="usermenu-ico" aria-hidden="true">◐</span>
+        <span class="usermenu-label">Toggle theme</span>
+        <span class="usermenu-hint" id="themeHint">—</span>
+      </button>
+
+      <button class="usermenu-item" id="settingsBtn" role="menuitem" type="button">
+        <span class="usermenu-ico" aria-hidden="true">⚙</span>
+        <span class="usermenu-label">Settings</span>
+      </button>
+
+      <button class="usermenu-item" id="manageUsersBtn" role="menuitem" type="button" data-perm="manage:users" hidden>
+        <span class="usermenu-ico" aria-hidden="true">☰</span>
+        <span class="usermenu-label">Manage users</span>
+      </button>
+
+      <div class="usermenu-sep"></div>
+
+      <button class="usermenu-item usermenu-danger" id="logoutBtn" role="menuitem" type="button">
+        <span class="usermenu-ico" aria-hidden="true">⏻</span>
+        <span class="usermenu-label">Sign out</span>
+      </button>
+    </div>
+  </div>
+  </div><!-- /topbar-top -->
 
   <div class="topbar-controls">
     <label class="field">
@@ -93,17 +149,6 @@
     <div class="btn-group">
       <button id="exportExcel" class="btn btn-primary page-summary-only" data-perm="export" type="button">Export Excel</button>
       <button id="exportCsv" class="btn page-summary-only" data-perm="export" type="button">CSV</button>
-      <button id="refreshBtn" class="btn btn-icon" type="button" title="Refresh from database">↻</button>
-      <button id="themeBtn" class="btn btn-icon" type="button" title="Toggle theme">◐</button>
-    </div>
-
-    <div class="usermenu">
-      <span class="user-avatar" id="userAvatar">–</span>
-      <div class="user-meta">
-        <span class="user-name" id="userName">—</span>
-        <span class="user-role" id="userRole">—</span>
-      </div>
-      <button class="btn btn-icon" id="logoutBtn" type="button" title="Sign out">⏻</button>
     </div>
   </div>
 
@@ -218,6 +263,32 @@
     <div class="dialog-actions">
       <button class="btn" value="cancel" type="submit">Cancel</button>
       <button class="btn btn-primary" id="userSaveBtn" value="save" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Settings -->
+<dialog id="settingsDialog" class="dialog">
+  <form method="dialog">
+    <h3>Settings</h3>
+
+    <fieldset class="settings-group">
+      <legend>Appearance</legend>
+      <div class="segmented" id="themeChoice" role="radiogroup" aria-label="Theme">
+        <button class="segmented-btn" data-theme-mode="light"  role="radio" aria-checked="false" type="button">Light</button>
+        <button class="segmented-btn" data-theme-mode="dark"   role="radio" aria-checked="false" type="button">Dark</button>
+        <button class="segmented-btn" data-theme-mode="system" role="radio" aria-checked="false" type="button">System</button>
+      </div>
+    </fieldset>
+
+    <fieldset class="settings-group">
+      <legend>Signed in as</legend>
+      <p class="settings-line"><span id="setName">—</span> · <span id="setRole">—</span></p>
+      <p class="settings-note">Dashboard accounts are separate from EduCon student logins. Access is read-only — no student data is ever modified.</p>
+    </fieldset>
+
+    <div class="dialog-actions">
+      <button class="btn btn-primary" value="close" type="submit">Done</button>
     </div>
   </form>
 </dialog>

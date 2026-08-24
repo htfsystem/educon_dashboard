@@ -114,15 +114,114 @@
 }
 .navlink[hidden] { display: none; }
 
-.usermenu { display: flex; align-items: center; gap: 9px; padding-left: 12px; border-left: 1px solid var(--border); }
+/* Top row: brand on the left, nav in the middle, profile pinned top-right. */
+.topbar-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.topbar-top .usermenu { margin-left: auto; }
+
+/* ---------- Profile menu ---------- */
+
+.usermenu { position: relative; flex: none; }
+
+.usermenu-trigger {
+  font: inherit;
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 10px 5px 5px;
+  border: 1px solid transparent; border-radius: 999px;
+  background: transparent; cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+.usermenu-trigger:hover { background: var(--wash); border-color: var(--border); }
+.usermenu-trigger[aria-expanded="true"] { background: var(--wash); border-color: var(--border-strong); }
+.usermenu-trigger:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+
 .user-avatar {
   width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
-  font-size: 12px; font-weight: 700; color: #fff;
+  font-size: 12px; font-weight: 700; color: #fff; flex: none;
   background: linear-gradient(135deg, var(--ec-blue-700), var(--ec-green-500));
 }
-.user-meta { display: flex; flex-direction: column; line-height: 1.25; }
+.user-avatar-lg { width: 40px; height: 40px; font-size: 14px; }
+
+.user-meta { display: flex; flex-direction: column; line-height: 1.25; text-align: left; }
 .user-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .user-role { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+
+.usermenu-caret {
+  font-size: 10px; color: var(--text-muted);
+  transition: transform 0.16s ease;
+}
+.usermenu-trigger[aria-expanded="true"] .usermenu-caret { transform: rotate(180deg); }
+
+.usermenu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  min-width: 258px;
+  padding: 6px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 14px 40px rgba(15, 23, 42, 0.18);
+  animation: usermenu-in 0.14s ease-out;
+}
+.usermenu-panel[hidden] { display: none; }
+
+@keyframes usermenu-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.usermenu-head { display: flex; align-items: center; gap: 10px; padding: 10px 10px 12px; }
+.usermenu-handle { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+
+.usermenu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
+
+.usermenu-item {
+  font: inherit; font-size: 13px;
+  width: 100%;
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px;
+  border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-primary);
+  cursor: pointer; text-align: left;
+}
+.usermenu-item:hover { background: var(--wash); }
+.usermenu-item:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
+.usermenu-item[hidden] { display: none; }
+
+.usermenu-ico { width: 18px; text-align: center; font-size: 14px; color: var(--text-secondary); flex: none; }
+.usermenu-label { flex: 1 1 auto; }
+.usermenu-hint { font-size: 11px; color: var(--text-muted); }
+
+.usermenu-danger { color: var(--critical); }
+.usermenu-danger .usermenu-ico { color: inherit; }
+
+/* ---------- Settings dialog ---------- */
+
+.settings-group { border: 0; padding: 0; margin: 0 0 16px; }
+.settings-group legend {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-muted); padding: 0; margin-bottom: 8px;
+}
+.settings-line { margin: 0; font-size: 13px; }
+.settings-note { margin: 6px 0 0; font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
+
+.segmented { display: flex; gap: 4px; padding: 3px; background: var(--wash); border-radius: 999px; }
+.segmented-btn {
+  font: inherit; font-size: 12.5px; flex: 1;
+  padding: 7px 12px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--text-secondary); cursor: pointer;
+}
+.segmented-btn:hover { color: var(--text-primary); }
+.segmented-btn[aria-checked="true"] {
+  background: var(--surface-1); color: var(--text-primary); font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
 
 /* Pages swap in place; only the active one is in the flow. */
 .page { display: none; }
@@ -247,3 +346,16 @@ body[data-page="users"] .field:has(#yearSelect) { display: none; }
 .dialog form { display: flex; flex-direction: column; gap: 13px; padding: 26px; }
 .dialog h3 { margin: 0; font-size: 17px; font-weight: 650; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+/* The profile menu stays reachable on narrow screens, where the topbar's
+   filter row is hidden entirely by dashboard.css. */
+@media (max-width: 760px) {
+  .topbar-top { gap: 10px; }
+  .topbar-top .mainnav { order: 3; width: 100%; }
+  .usermenu-trigger .user-meta { display: none; }
+  .usermenu-trigger { padding: 4px; }
+}
+
+@media (max-width: 640px) {
+  .usermenu-panel { min-width: min(280px, calc(100vw - 28px)); }
+}
