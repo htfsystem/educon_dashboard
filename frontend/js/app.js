@@ -63,6 +63,7 @@
     state.overview = null;
     $('userMenuPanel').hidden = true;
     $('userMenuBtn').setAttribute('aria-expanded', 'false');
+    closeSidebar();
     showLogin();
     return null;
   }
@@ -228,6 +229,7 @@
 
     document.body.dataset.page = page;
     $('pageTitle').textContent = PAGES[page].title;
+    closeSidebar();
 
     // dashboard.js renders the status distribution (page 1) and the matrix (page 2),
     // so it is booted for either data page.
@@ -238,6 +240,44 @@
 
   document.querySelectorAll('.navlink').forEach(b =>
     b.addEventListener('click', () => go(b.dataset.page)));
+
+  // ---------- Sidebar drawer ----------
+  // On wide screens the sidebar is simply always there; these controls only do
+  // anything below the 900px breakpoint, where CSS turns it into a drawer.
+
+  const sidebar = $('sidebar');
+  const scrim = $('sidebarScrim');
+  const sidebarToggle = $('sidebarToggle');
+
+  function openSidebar() {
+    sidebar.classList.add('is-open');
+    scrim.hidden = false;
+    sidebarToggle.setAttribute('aria-expanded', 'true');
+    sidebar.querySelector('.navlink:not([hidden])')?.focus();
+  }
+
+  function closeSidebar() {
+    sidebar.classList.remove('is-open');
+    scrim.hidden = true;
+    sidebarToggle.setAttribute('aria-expanded', 'false');
+  }
+
+  sidebarToggle.addEventListener('click', () =>
+    (sidebar.classList.contains('is-open') ? closeSidebar() : openSidebar()));
+
+  scrim.addEventListener('click', closeSidebar);
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && sidebar.classList.contains('is-open')) {
+      closeSidebar();
+      sidebarToggle.focus();
+    }
+  });
+
+  // Growing past the breakpoint leaves the drawer state stale, so reset it.
+  matchMedia('(min-width: 901px)').addEventListener('change', e => {
+    if (e.matches) closeSidebar();
+  });
 
   // ---------- Academic years ----------
   // One year selector drives both data pages, so they can never disagree.

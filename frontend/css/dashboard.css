@@ -128,21 +128,7 @@ h2 { font-size: 15px; }
   z-index: 40;
   background: var(--surface-1);
   border-bottom: 1px solid var(--border);
-  padding: 14px 20px 0;
-}
-
-.brand { display: flex; align-items: center; gap: 12px; }
-
-.brand-mark {
-  width: 34px; height: 34px;
-  flex: none;
-  display: grid; place-items: center;
-  border-radius: 8px;
-  background: var(--series-1);
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 0.02em;
+  padding: 14px 20px 14px;
 }
 
 .topbar-controls {
@@ -531,7 +517,7 @@ h2 { font-size: 15px; }
 }
 
 @media (max-width: 640px) {
-  .topbar { padding: 12px 14px 0; }
+  .topbar { padding: 12px 14px 12px; }
   .layout { padding: 14px 14px 32px; }
   .btn-group { margin-left: 0; width: 100%; }
   .field-grow { max-width: none; }
@@ -539,7 +525,8 @@ h2 { font-size: 15px; }
 }
 
 @media print {
-  .topbar-controls, .tooltip { display: none; }
+  .topbar-controls, .tooltip, .sidebar { display: none; }
+  #appShell { grid-template-columns: minmax(0, 1fr); }
   .panel { break-inside: avoid; box-shadow: none; }
   .table-scroll { max-height: none; overflow: visible; }
 }

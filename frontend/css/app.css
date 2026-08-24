@@ -130,16 +130,56 @@
 
 /* ============================================================ SHELL ========= */
 
+/* The shell is a two-column grid: a fixed sidebar and everything else.
+   [hidden] outranks this on specificity, so the shell still hides at login. */
+#appShell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  min-height: 100vh;
+}
 #appShell[hidden] { display: none; }
+
+:root { --sidebar-w: 244px; }
+
+/* min-width: 0 lets the wide matrix scroll inside its own container instead of
+   stretching this column and pushing the page sideways. */
+.shell-main { min-width: 0; }
 
 /* The mark is 200 × 210, so height tracks width rather than matching it. */
 .brand-mark-svg { width: 40px; height: 42px; }
 .ec-mark-login  { width: 64px; height: 67px; }
 
-.mainnav { display: flex; gap: 4px; flex-wrap: wrap; }
+/* ---------- Sidebar ---------- */
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 12px 14px;
+  background: var(--surface-1);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  z-index: 45;
+}
+
+.sidebar-brand {
+  display: flex; align-items: center; gap: 11px;
+  padding: 4px 8px 16px;
+}
+.sidebar-name { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--text-primary); }
+.sidebar-tag  { font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin-top: 2px; }
+
+.sidenav { display: flex; flex-direction: column; gap: 3px; }
+
 .navlink {
   font: inherit; font-size: 13.5px; font-weight: 500;
-  padding: 8px 14px; border-radius: 999px; cursor: pointer;
+  display: flex; align-items: center; gap: 11px;
+  width: 100%; text-align: left;
+  padding: 10px 12px; border-radius: var(--radius-sm); cursor: pointer;
   border: 1px solid transparent; background: transparent; color: var(--text-secondary);
   transition: background 0.16s ease, color 0.16s ease;
 }
@@ -148,12 +188,24 @@
   background: var(--ec-blue-700); color: #fff; border-color: var(--ec-blue-700);
 }
 .navlink[hidden] { display: none; }
+.navlink:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
 
-/* Top row: brand on the left, nav in the middle, profile pinned top-right. */
+.navlink-ico { width: 17px; height: 17px; flex: none; fill: currentColor; }
+
+.sidebar-foot {
+  margin: auto 0 0; padding: 14px 12px 0;
+  border-top: 1px solid var(--border);
+  font-size: 11px; line-height: 1.55; color: var(--text-muted);
+}
+
+/* The drawer toggle and its scrim only exist on narrow screens. */
+.sidebar-toggle, .sidebar-scrim { display: none; }
+
+/* Top row: the page title on the left, profile pinned to the right. */
 .topbar-top {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   flex-wrap: wrap;
 }
 .topbar-top .usermenu { margin-left: auto; }
@@ -367,15 +419,47 @@ body[data-page="users"] .topbar-controls { display: none; }
 .dialog h3 { margin: 0; font-size: 17px; font-weight: 650; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 
-/* The profile menu stays reachable on narrow screens, where the topbar's
-   filter row is hidden entirely by dashboard.css. */
-@media (max-width: 760px) {
+/* Below this width the sidebar becomes an off-canvas drawer: the grid collapses
+   to one column and the panel slides in over the page when the toggle is used. */
+@media (max-width: 900px) {
+  #appShell { grid-template-columns: minmax(0, 1fr); }
+
+  .sidebar {
+    position: fixed;
+    top: 0; bottom: 0; left: 0;
+    width: var(--sidebar-w);
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: 0 0 40px rgba(15, 23, 42, 0.22);
+    z-index: 70;
+  }
+  .sidebar.is-open { transform: none; }
+
+  .sidebar-scrim {
+    display: block;
+    position: fixed; inset: 0; z-index: 65;
+    background: rgba(6, 12, 24, 0.42);
+  }
+  .sidebar-scrim[hidden] { display: none; }
+
+  .sidebar-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    font: inherit; font-size: 17px; line-height: 1;
+    width: 36px; height: 36px; flex: none;
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    background: var(--surface-1); color: var(--text-primary); cursor: pointer;
+  }
+  .sidebar-toggle:hover { background: var(--wash); }
+
   .topbar-top { gap: 10px; }
-  .topbar-top .mainnav { order: 3; width: 100%; }
   .usermenu-trigger .user-meta { display: none; }
   .usermenu-trigger { padding: 4px; }
 }
 
 @media (max-width: 640px) {
   .usermenu-panel { min-width: min(280px, calc(100vw - 28px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar { transition: none; }
 }
