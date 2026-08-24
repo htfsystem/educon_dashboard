@@ -64,7 +64,6 @@
     sortDir: -1,
     heatmap: true,
     hideEmpty: false,
-    fetchedAt: null,
     database: null      // from /api/health, stamped onto the exports
   };
 
@@ -73,9 +72,21 @@
     main: $('main'), year: $('yearSelect'), team: $('teamSelect'), search: $('searchInput'),
     statusChart: $('statusChart'), stageLegend: $('stageLegend'),
     table: $('matrixTable'), tooltip: $('tooltip'),
-    badge: $('dbBadge'), freshness: $('freshness'),
     distSub: $('distSub'), matrixSub: $('matrixSub')
   };
+
+  // With the status line gone, a failure has to announce itself on the panels
+  // themselves rather than in a badge at the top of the shell.
+  function showError(message) {
+    [el.distSub, el.matrixSub].forEach(node => {
+      node.textContent = message;
+      node.classList.add('panel-sub-error');
+    });
+  }
+
+  function clearError() {
+    [el.distSub, el.matrixSub].forEach(node => node.classList.remove('panel-sub-error'));
+  }
 
   // ---------- SVG helpers ----------
   const NS = 'http://www.w3.org/2000/svg';
@@ -149,10 +160,9 @@
         getJSON('/api/health')
       ]);
 
+      // Still needed: the database name is stamped onto the exports.
       state.database = health.database;
-      el.badge.className = `badge badge-${health.status === 'healthy' ? 'live' : 'error'}`;
-      el.badge.textContent = health.status === 'healthy'
-        ? `Live · ${health.database}` : 'Database unreachable';
+      if (health.status !== 'healthy') throw new Error('Database unreachable');
 
       // The app shell fills this selector before either data page opens; honour a
       // year the user already picked rather than snapping back to the newest one.
@@ -167,10 +177,8 @@
 
       await loadYear();
     } catch (error) {
-      el.badge.className = 'badge badge-error';
-      el.badge.textContent = 'Connection failed';
+      showError(`Could not reach the database — ${error.message}`);
       el.main.removeAttribute('aria-busy');
-      el.badge.title = error.message;
     }
   }
 
@@ -178,11 +186,10 @@
     el.main.setAttribute('aria-busy', 'true');
     try {
       state.report = await getJSON(`/api/report?year=${encodeURIComponent(state.year)}`);
-      state.fetchedAt = Date.now();
+      clearError();
       renderAll();
     } catch (error) {
-      el.badge.className = 'badge badge-error';
-      el.badge.textContent = escapeHtml(error.message);
+      showError(error.message);
     } finally {
       el.main.removeAttribute('aria-busy');
     }
@@ -516,19 +523,9 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
 
-  // ---------- Freshness ----------
-  function tickFreshness() {
-    if (!state.fetchedAt) return;
-    const s = Math.round((Date.now() - state.fetchedAt) / 1000);
-    el.freshness.textContent = s < 5 ? 'Updated just now'
-      : s < 60 ? `Updated ${s}s ago`
-      : `Updated ${Math.round(s / 60)}m ago`;
-  }
-
   function renderAll() {
     renderStatusChart();
     renderMatrix();
-    tickFreshness();
   }
 
   // ---------- Wiring ----------
@@ -621,7 +618,6 @@
     }, 180);
   });
 
-  setInterval(tickFreshness, 10000);
   setInterval(() => { if (!document.hidden) loadYear(); }, 120000);
 
   // The app shell owns navigation and decides when the summary page is first shown,

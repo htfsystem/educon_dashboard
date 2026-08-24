@@ -88,22 +88,7 @@
       node.toggleAttribute('data-perm-denied', !allowed);
     });
 
-    Promise.all([loadHealth(), loadYears()]).then(() => go('dashboard'));
-  }
-
-  /** Pool liveness, shown in the status line from the moment the shell opens. */
-  async function loadHealth() {
-    const badge = $('dbBadge');
-    try {
-      const health = await api('/api/health');
-      badge.className = `badge badge-${health.status === 'healthy' ? 'live' : 'error'}`;
-      badge.textContent = health.status === 'healthy'
-        ? `Live · ${health.database}` : 'Database unreachable';
-    } catch (error) {
-      badge.className = 'badge badge-error';
-      badge.textContent = 'Connection failed';
-      badge.title = error.message;
-    }
+    loadYears().then(() => go('dashboard'));
   }
 
   $('loginForm').addEventListener('submit', async e => {
@@ -218,10 +203,11 @@
 
   // ---------- Navigation ----------
 
+  // Each page's descriptive line lives in its own panel header, not the topbar.
   const PAGES = {
-    dashboard: { el: 'pageDashboard', title: 'Dashboard',               sub: 'EduCon approval & disbursement pipeline' },
-    summary:   { el: 'main',          title: 'Student Status Summary',  sub: 'Every team member against every database status' },
-    users:     { el: 'pageUsers',     title: 'Dashboard accounts',      sub: 'Who can sign in, and what they may do' }
+    dashboard: { el: 'pageDashboard', title: 'Dashboard' },
+    summary:   { el: 'main',          title: 'Student Status Summary' },
+    users:     { el: 'pageUsers',     title: 'Dashboard accounts' }
   };
 
   function go(page) {
@@ -242,7 +228,6 @@
 
     document.body.dataset.page = page;
     $('pageTitle').textContent = PAGES[page].title;
-    $('pageSub').textContent = PAGES[page].sub;
 
     // dashboard.js renders the status distribution (page 1) and the matrix (page 2),
     // so it is booted for either data page.
@@ -265,9 +250,10 @@
       state.year = years[0].year;
       $('yearSelect').value = state.year;
     } catch (error) {
-      $('dbBadge').className = 'badge badge-error';
-      $('dbBadge').textContent = 'Connection failed';
-      $('dbBadge').title = error.message;
+      // The hero is the only always-visible surface on page 1, so a failure to
+      // reach the database has to be reported there.
+      $('heroHeadline').textContent = 'Could not reach the database';
+      $('heroSub').textContent = error.message;
     }
   }
 
@@ -290,7 +276,6 @@
 
     try {
       state.overview = await api(`/api/overview?year=${encodeURIComponent(state.year)}`);
-      $('freshness').textContent = `Updated ${new Date().toLocaleTimeString()}`;
       renderOverview();
     } catch (error) {
       $('heroHeadline').textContent = 'Could not load the pipeline';
