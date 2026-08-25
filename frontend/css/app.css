@@ -136,10 +136,13 @@
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   min-height: 100vh;
+
+  /* The drag handle writes --sidebar-user-w inline, never --sidebar-w itself: an
+     inline custom property would outrank the collapsed-rail rule below and the
+     sidebar could never be collapsed once it had been dragged. */
+  --sidebar-w: var(--sidebar-user-w, 244px);
 }
 #appShell[hidden] { display: none; }
-
-:root { --sidebar-w: 244px; }
 
 /* min-width: 0 lets the wide matrix scroll inside its own container instead of
    stretching this column and pushing the page sideways. */
@@ -162,18 +165,30 @@
   padding: 16px 12px 14px;
   background: var(--surface-1);
   border-right: 1px solid var(--border);
-  overflow-y: auto;
+  /* The sidebar itself never scrolls — only the nav inside it does, which is what
+     keeps the brand and the footer locked in place on every page. */
+  overflow: hidden;
   z-index: 45;
 }
 
+/* Locked to the top of the sidebar on every page: it is outside the scrolling
+   region, so it cannot be scrolled away however long the nav grows. */
 .sidebar-brand {
   display: flex; align-items: center; gap: 11px;
   padding: 4px 8px 16px;
+  flex: none;
 }
+.sidebar-brand .brand-mark-svg { flex: none; }
 .sidebar-name { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--text-primary); }
 .sidebar-tag  { font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin-top: 2px; }
 
-.sidenav { display: flex; flex-direction: column; gap: 3px; }
+/* The only scrolling part of the sidebar, so brand and footer stay put. */
+.sidenav {
+  display: flex; flex-direction: column; gap: 3px;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+}
 
 .navlink {
   font: inherit; font-size: 13.5px; font-weight: 500;
@@ -193,13 +208,70 @@
 .navlink-ico { width: 17px; height: 17px; flex: none; fill: currentColor; }
 
 .sidebar-foot {
-  margin: auto 0 0; padding: 14px 12px 0;
+  flex: none;
+  margin: 0; padding: 14px 12px 0;
   border-top: 1px solid var(--border);
   font-size: 11px; line-height: 1.55; color: var(--text-muted);
 }
 
-/* The drawer toggle and its scrim only exist on narrow screens. */
-.sidebar-toggle, .sidebar-scrim { display: none; }
+/* The scrim belongs to the narrow-screen drawer only. The toggle is always shown:
+   on wide screens it collapses the sidebar to a rail, on narrow ones it opens the
+   drawer — one control, two behaviours, decided by the breakpoint. */
+.sidebar-scrim { display: none; }
+
+.sidebar-toggle {
+  font: inherit; font-size: 17px; line-height: 1;
+  flex: none;
+  width: 34px; height: 34px;
+  display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-1); color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.sidebar-toggle:hover { background: var(--wash); color: var(--text-primary); }
+.sidebar-toggle:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+
+/* ---------- Collapsed rail (wide screens) ---------- */
+/* The rail overrides --sidebar-w outright, so expanding again restores whatever
+   width was last dragged (that lives in --sidebar-user-w, untouched). */
+@media (min-width: 901px) {
+  #appShell.is-collapsed { --sidebar-w: 66px; }
+
+  /* Only the icons survive: labels, tagline and footer would all be clipped. */
+  #appShell.is-collapsed .sidebar-name,
+  #appShell.is-collapsed .sidebar-tag,
+  #appShell.is-collapsed .sidebar-foot,
+  #appShell.is-collapsed .navlink span { display: none; }
+
+  #appShell.is-collapsed .sidebar { padding-left: 8px; padding-right: 8px; }
+  #appShell.is-collapsed .sidebar-brand { justify-content: center; padding: 4px 0 16px; }
+  #appShell.is-collapsed .navlink { justify-content: center; padding-left: 0; padding-right: 0; }
+
+  /* Nothing to drag when the width is fixed by the rail. */
+  #appShell.is-collapsed .sidebar-resizer { display: none; }
+}
+
+/* ---------- Drag-to-resize handle ---------- */
+
+/* The sidebar is `position: sticky`, so it is already this handle's containing block.
+   It sits just inside the right edge because the sidebar clips its overflow. */
+.sidebar-resizer {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 46;
+  background: transparent;
+  transition: background 0.16s ease;
+}
+.sidebar-resizer:hover,
+.sidebar-resizer:focus-visible,
+#appShell.is-resizing .sidebar-resizer { background: color-mix(in srgb, var(--series-1) 45%, transparent); }
+.sidebar-resizer:focus-visible { outline: none; }
+
+/* While dragging, the pointer must not select text or land on iframes/cells. */
+#appShell.is-resizing { cursor: col-resize; user-select: none; }
 
 /* Top row: the page title on the left, profile pinned to the right. */
 .topbar-top {
@@ -440,14 +512,10 @@ body[data-page="users"] .topbar-controls { display: none; }
   }
   .sidebar-scrim[hidden] { display: none; }
 
-  .sidebar-toggle {
-    display: inline-flex; align-items: center; justify-content: center;
-    font: inherit; font-size: 17px; line-height: 1;
-    width: 36px; height: 36px; flex: none;
-    border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
-    background: var(--surface-1); color: var(--text-primary); cursor: pointer;
-  }
-  .sidebar-toggle:hover { background: var(--wash); }
+  .sidebar-toggle { width: 36px; height: 36px; border-color: var(--border-strong); }
+
+  /* The drawer is fixed-width here, and there is no rail to collapse into. */
+  .sidebar-resizer { display: none; }
 
   .topbar-top { gap: 10px; }
   .usermenu-trigger .user-meta { display: none; }

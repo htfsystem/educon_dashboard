@@ -122,21 +122,26 @@
   </div>
 
   <nav class="sidenav" id="mainNav" aria-label="Sections">
-    <button class="navlink is-active" data-page="dashboard" type="button">
+    <!-- title= is what names each link when the sidebar is collapsed to the icon rail. -->
+    <button class="navlink is-active" data-page="dashboard" type="button" title="Dashboard">
       <svg class="navlink-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoGrid"/></svg>
       <span>Dashboard</span>
     </button>
-    <button class="navlink" data-page="summary" type="button">
+    <button class="navlink" data-page="summary" type="button" title="Student Status Summary">
       <svg class="navlink-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoTable"/></svg>
       <span>Student Status Summary</span>
     </button>
-    <button class="navlink" data-page="users" data-perm="manage:users" type="button" hidden>
+    <button class="navlink" data-page="users" data-perm="manage:users" type="button" hidden title="Users">
       <svg class="navlink-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoUsers"/></svg>
       <span>Users</span>
     </button>
   </nav>
 
   <p class="sidebar-foot">Read-only reporting.<br>No student data is ever modified.</p>
+
+  <!-- Drag handle on the sidebar's right edge. Wide screens only; inert in the rail. -->
+  <div class="sidebar-resizer" id="sidebarResizer" role="separator"
+       aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div>
 </aside>
 
 <!-- ------------------------------------------------------- MAIN COLUMN ------ -->

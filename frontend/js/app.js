@@ -244,29 +244,72 @@
   document.querySelectorAll('.navlink').forEach(b =>
     b.addEventListener('click', () => go(b.dataset.page)));
 
-  // ---------- Sidebar drawer ----------
-  // On wide screens the sidebar is simply always there; these controls only do
-  // anything below the 900px breakpoint, where CSS turns it into a drawer.
+  // ---------- Sidebar: collapse, drawer, resize ----------
+  // One toggle, two behaviours decided by the breakpoint. Wide screens collapse the
+  // sidebar to an icon rail; narrow ones slide it in as an off-canvas drawer. Both the
+  // collapsed flag and the dragged width persist, so the layout a user sets stays set.
 
+  const shell = $('appShell');
   const sidebar = $('sidebar');
   const scrim = $('sidebarScrim');
   const sidebarToggle = $('sidebarToggle');
+  const resizer = $('sidebarResizer');
+
+  const WIDE = matchMedia('(min-width: 901px)');
+  const SIDEBAR_MIN = 190;
+  const SIDEBAR_MAX = 400;
+  const SIDEBAR_DEFAULT = 244;
+
+  // localStorage throws outright in some privacy modes, so every access is guarded
+  // and simply falls back to the default layout.
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch { /* not critical */ } }
+  };
+
+  const clampWidth = px =>
+    Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(px)));
+
+  function applyWidth(px) {
+    // --sidebar-user-w, not --sidebar-w: see the note in app.css on #appShell.
+    shell.style.setProperty('--sidebar-user-w', `${clampWidth(px)}px`);
+  }
+
+  function setCollapsed(on) {
+    shell.classList.toggle('is-collapsed', on);
+    store.set('educon.sidebar.collapsed', on ? '1' : '0');
+    syncToggle();
+  }
+
+  /** The toggle's label and aria-expanded describe whichever mode is actually live. */
+  function syncToggle() {
+    const drawerOpen = sidebar.classList.contains('is-open');
+    const collapsed = shell.classList.contains('is-collapsed');
+    const expanded = WIDE.matches ? !collapsed : drawerOpen;
+    sidebarToggle.setAttribute('aria-expanded', String(expanded));
+    sidebarToggle.setAttribute('aria-label',
+      WIDE.matches
+        ? (collapsed ? 'Expand sidebar' : 'Collapse sidebar')
+        : (drawerOpen ? 'Hide sections' : 'Show sections'));
+  }
 
   function openSidebar() {
     sidebar.classList.add('is-open');
     scrim.hidden = false;
-    sidebarToggle.setAttribute('aria-expanded', 'true');
+    syncToggle();
     sidebar.querySelector('.navlink:not([hidden])')?.focus();
   }
 
   function closeSidebar() {
     sidebar.classList.remove('is-open');
     scrim.hidden = true;
-    sidebarToggle.setAttribute('aria-expanded', 'false');
+    syncToggle();
   }
 
-  sidebarToggle.addEventListener('click', () =>
-    (sidebar.classList.contains('is-open') ? closeSidebar() : openSidebar()));
+  sidebarToggle.addEventListener('click', () => {
+    if (WIDE.matches) return setCollapsed(!shell.classList.contains('is-collapsed'));
+    return sidebar.classList.contains('is-open') ? closeSidebar() : openSidebar();
+  });
 
   scrim.addEventListener('click', closeSidebar);
 
@@ -277,10 +320,63 @@
     }
   });
 
-  // Growing past the breakpoint leaves the drawer state stale, so reset it.
-  matchMedia('(min-width: 901px)').addEventListener('change', e => {
-    if (e.matches) closeSidebar();
+  // Crossing the breakpoint leaves the other mode's state stale, so reset the drawer
+  // and re-label the toggle for whichever mode is now in force.
+  WIDE.addEventListener('change', () => { closeSidebar(); syncToggle(); });
+
+  // ---------- Drag to resize ----------
+  // Pointer capture keeps the drag alive even when the cursor outruns the 6px handle.
+
+  let dragFrom = 0;
+  let dragWidth = 0;
+
+  resizer.addEventListener('pointerdown', e => {
+    if (!WIDE.matches || shell.classList.contains('is-collapsed')) return;
+    dragFrom = e.clientX;
+    dragWidth = sidebar.getBoundingClientRect().width;
+    resizer.setPointerCapture(e.pointerId);
+    shell.classList.add('is-resizing');
+    e.preventDefault();
   });
+
+  resizer.addEventListener('pointermove', e => {
+    if (!shell.classList.contains('is-resizing')) return;
+    applyWidth(dragWidth + (e.clientX - dragFrom));
+  });
+
+  const endDrag = e => {
+    if (!shell.classList.contains('is-resizing')) return;
+    shell.classList.remove('is-resizing');
+    if (e.pointerId !== undefined && resizer.hasPointerCapture?.(e.pointerId)) {
+      resizer.releasePointerCapture(e.pointerId);
+    }
+    store.set('educon.sidebar.width', String(sidebar.getBoundingClientRect().width));
+  };
+  resizer.addEventListener('pointerup', endDrag);
+  resizer.addEventListener('pointercancel', endDrag);
+
+  // Keyboard parity for the drag, and a double-click to get back to the default.
+  resizer.addEventListener('keydown', e => {
+    const step = e.shiftKey ? 32 : 8;
+    const current = sidebar.getBoundingClientRect().width;
+    if (e.key === 'ArrowLeft') applyWidth(current - step);
+    else if (e.key === 'ArrowRight') applyWidth(current + step);
+    else return;
+    e.preventDefault();
+    store.set('educon.sidebar.width', String(sidebar.getBoundingClientRect().width));
+  });
+
+  resizer.addEventListener('dblclick', () => {
+    applyWidth(SIDEBAR_DEFAULT);
+    store.set('educon.sidebar.width', String(SIDEBAR_DEFAULT));
+  });
+
+  // Restore the saved layout before the shell is first shown, so it never flashes
+  // at the default width and then jumps.
+  const savedWidth = Number(store.get('educon.sidebar.width'));
+  if (Number.isFinite(savedWidth) && savedWidth > 0) applyWidth(savedWidth);
+  if (store.get('educon.sidebar.collapsed') === '1') shell.classList.add('is-collapsed');
+  syncToggle();
 
   // ---------- Academic years ----------
   // One year selector drives both data pages, so they can never disagree.
