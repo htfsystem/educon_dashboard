@@ -575,16 +575,6 @@
     const r = state.report;
     const rows = visibleMembers();
     const cohort = trackedTotal(r);
-    const rec = r.reconciliation;
-
-    const reconRows = [
-      ['Cohort total (records this year)', rec.cohortTotal],
-      ['Assigned to a named member', rec.assignedDistinct],
-      ['Unassigned (system buckets only)', rec.unassigned],
-      ['Sum of member rows', rec.memberRowSum],
-      ['Rows reconcile to assigned', rec.memberRowSum === rec.assignedDistinct ? 'YES' : 'NO — double counting'],
-      ['Tracked total (9 pipeline columns)', cohort]
-    ];
 
     // Column order matches the on-screen matrix exactly: Total sits beside the name,
     // ahead of the nine status columns, so the headline number is read first.
@@ -663,31 +653,13 @@
     // Wide enough that every header label wraps to at most two lines and stays readable.
     const cols = [{ w: 5 }, { w: 32 }, { w: 10 }, { w: 9 }, ...COLUMNS.map(() => ({ w: 15 }))];
 
-    // Sheet 2 — what each column means in the database, plus the reconciliation, so the
-    // numbers can be defended away from the dashboard.
+    // Sheet 2 — the column definitions only: which exact database statuses sit behind
+    // each dashboard column. The reconciliation figures live on the dashboard, not here.
     const notes = [];
-    const nMerges = [];
+    const nMerges = ['A1:B1'];
     notes.push({ cells: [{ v: 'Column definitions — exact database statuses', s: S.title }], height: 24 });
-    nMerges.push('A1:B1');
     notes.push({ cells: [{ v: 'Dashboard column', s: S.head }, { v: 'Exact application_status value(s)', s: S.head }] });
     COLUMNS.forEach(c => notes.push({ cells: [{ v: c.label, s: S.txt }, { v: c.statuses.join(', '), s: S.txt }] }));
-    notes.push({ cells: [] });
-    notes.push({ cells: [{ v: 'Reconciliation', s: S.title }], height: 24 });
-    nMerges.push(`A${notes.length}:B${notes.length}`);
-    notes.push({ cells: [{ v: 'Measure', s: S.head }, { v: 'Value', s: S.head }] });
-    reconRows.forEach(([k, v]) => notes.push({
-      cells: [{ v: k, s: S.txt }, { v, s: typeof v === 'number' ? S.num : S.txt }]
-    }));
-    notes.push({ cells: [] });
-    notes.push({
-      cells: [{
-        v: 'Excluded from every figure above: REACHED_CAREER_POINT, REJECTED, CASE_CLOSED. ' +
-           'Pseudo-user accounts (rcp, clo, E300, as) are not people and are filtered out of the roster.',
-        s: S.note
-      }],
-      height: 30
-    });
-    nMerges.push(`A${notes.length}:B${notes.length}`);
 
     const files = [
       {
