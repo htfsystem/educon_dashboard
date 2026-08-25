@@ -8,15 +8,16 @@
   // Display columns for the dashboard. Each column maps to one or more exact DB
   // statuses (see pipelineService.js / CLAUDE.md for the 13 real values) — the
   // underlying query and stored totals are never altered, only how they are grouped
-  // and labelled for display. REACHED_CAREER_POINT, REJECTED and CASE_CLOSED are
-  // intentionally excluded from every column, chart and total below.
+  // and labelled for display. REACHED_CAREER_POINT, REJECTED, CASE_CLOSED and
+  // BUDGET_PENDING are intentionally excluded from every column, chart and total below.
+  //
+  // CHANGE_REQUIRED is reported inside "Form Not Submitted": from the business side a
+  // form sent back for changes is not yet submitted, so the two are one number here.
   const COLUMNS = [
-    { key: 'CREATED',            label: 'Form Not Submitted',   statuses: ['CREATED'] },
-    { key: 'CHANGE_REQUIRED',    label: 'Change Required',      statuses: ['CHANGE_REQUIRED'] },
+    { key: 'CREATED',            label: 'Form Not Submitted',   statuses: ['CREATED', 'CHANGE_REQUIRED'] },
     { key: 'SCRUTINY_PENDING',   label: 'Scrutiny Pending',     statuses: ['SUBMITTED', 'REAPPLICATION_SUBMITTED'] },
     { key: 'APPROVAL_PENDING',   label: 'Approval Pending',     statuses: ['SCRUTINY_DONE'] },
     { key: 'SANCTION_PENDING',   label: 'Sanction Pending',     statuses: ['FIRST_LEVEL_APPROVED'] },
-    { key: 'BUDGET_PENDING',     label: 'Budget Pending',       statuses: ['BUDGET_PENDING'] },
     { key: 'DISBURSEMENT_PENDING', label: 'Disbursement Pending', statuses: ['FINAL_LEVEL_APPROVED'] },
     { key: 'STUDENT_DISBURSED',  label: 'Student Disbursed',    statuses: ['STUDENT_DISBURSED'] },
     { key: 'NO_REQUIREMENT_THIS_YEAR', label: 'No Requirement This Year', statuses: ['NO_REQUIREMENT_THIS_YEAR'] }
@@ -24,11 +25,9 @@
 
   const GROUP_VAR = {
     CREATED:                '--seq-2',
-    CHANGE_REQUIRED:        '--seq-2',
     SCRUTINY_PENDING:       '--seq-3',
     APPROVAL_PENDING:       '--seq-4',
     SANCTION_PENDING:       '--seq-5',
-    BUDGET_PENDING:         '--seq-5',
     DISBURSEMENT_PENDING:   '--seq-5',
     STUDENT_DISBURSED:      '--good',
     NO_REQUIREMENT_THIS_YEAR: '--text-muted'
@@ -38,8 +37,8 @@
   const colValue = (col, statusMap) =>
     col.statuses.reduce((n, s) => n + (statusMap[s] || 0), 0);
 
-  // Member totals count only the 9 tracked columns — closed / rejected / reached-
-  // career-point cases are excluded from every ETM/ATM count on this dashboard.
+  // Member totals count only the tracked columns above — closed / rejected / reached-
+  // career-point and budget-pending cases are excluded from every ETM/ATM count.
   const memberTotal = m => COLUMNS.reduce((n, c) => n + colValue(c, m.statuses), 0);
 
   // Column/grand totals come from the server's assignedStatusTotals: an exact, DISTINCT
@@ -733,10 +732,6 @@
 
   $('refreshBtn').addEventListener('click', loadYear);
   $('exportExcel').addEventListener('click', exportExcel);
-  $('exportCsv').addEventListener('click', () => {
-    location.href = `/api/export.csv?year=${encodeURIComponent(state.year)}`;
-  });
-
   $('heatToggle').addEventListener('click', e => {
     state.heatmap = !state.heatmap;
     e.currentTarget.classList.toggle('is-on', state.heatmap);
