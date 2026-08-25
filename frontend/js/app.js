@@ -557,6 +557,11 @@
 
   $('addUserBtn').addEventListener('click', () => openUserDialog(null));
 
+  // Closing directly rather than submitting the form: a submit — even one valued
+  // 'cancel' — runs constraint validation first, so an empty required Username would
+  // block the dialog from closing at all.
+  $('userDialogClose').addEventListener('click', () => $('userDialog').close('cancel'));
+
   $('userForm').addEventListener('submit', async e => {
     if (e.submitter && e.submitter.value === 'cancel') return;
     e.preventDefault();

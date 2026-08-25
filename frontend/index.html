@@ -329,7 +329,12 @@
 <!-- Add / edit user -->
 <dialog id="userDialog" class="dialog">
   <form method="dialog" id="userForm">
-    <h3 id="userDialogTitle">Add user</h3>
+    <div class="dialog-head">
+      <h3 id="userDialogTitle">Add user</h3>
+      <!-- type=button, so it closes without running the form's required-field checks. -->
+      <button class="dialog-close" id="userDialogClose" type="button"
+              aria-label="Close">&times;</button>
+    </div>
     <label class="login-field"><span>Username</span>
       <input id="uUsername" type="text" required></label>
     <label class="login-field"><span>Full name</span>
@@ -344,7 +349,8 @@
       <input id="uPassword" type="password"></label>
     <p class="login-error" id="userFormError" role="alert" hidden></p>
     <div class="dialog-actions">
-      <button class="btn" value="cancel" type="submit">Cancel</button>
+      <!-- formnovalidate: cancelling must work even with the required fields empty. -->
+      <button class="btn" value="cancel" type="submit" formnovalidate>Cancel</button>
       <button class="btn btn-primary" id="userSaveBtn" value="save" type="submit">Save</button>
     </div>
   </form>
