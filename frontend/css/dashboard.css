@@ -350,10 +350,13 @@ h2 { font-size: 15px; }
   border-radius: var(--radius-sm);
 }
 
+/* Fixed layout with explicit column widths: the 9 status columns + name + total all
+   fit the panel, so the grid never scrolls sideways. Status headers wrap instead. */
 .matrix {
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;
+  table-layout: fixed;
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
@@ -361,9 +364,10 @@ h2 { font-size: 15px; }
 /* Every cell carries a right + bottom rule, so the matrix reads as a true grid
    both on screen and in the exports. Numerals are centred in their column. */
 .matrix th, .matrix td {
-  padding: 7px 9px;
+  padding: 7px 4px;
   text-align: center;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   border-bottom: 1px solid var(--grid);
   border-right: 1px solid var(--grid);
 }
@@ -397,8 +401,8 @@ h2 { font-size: 15px; }
   z-index: 2;
   background: var(--surface-1);
 }
-.col-sl { left: 0; width: 34px; color: var(--text-muted); text-align: center; }
-.col-name { left: 34px; min-width: 178px; border-right: 1px solid var(--border-strong); }
+.col-sl { left: 0; width: 32px; color: var(--text-muted); text-align: center; }
+.col-name { left: 32px; width: 168px; border-right: 1px solid var(--border-strong); }
 .matrix thead .col-name, .matrix thead .col-sl { z-index: 6; }
 
 .member-name { font-weight: 500; }
@@ -409,20 +413,8 @@ h2 { font-size: 15px; }
   font-variant-numeric: normal;
 }
 
-.team-tag {
-  display: inline-block;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 1px 5px;
-  border-radius: 3px;
-  border: 1px solid var(--border-strong);
-  color: var(--text-muted);
-  margin-right: 7px;
-  vertical-align: 1px;
-}
-.team-ETM { color: var(--series-1); border-color: color-mix(in srgb, var(--series-1) 40%, transparent); }
-.team-ATM { color: var(--series-2); border-color: color-mix(in srgb, var(--series-2) 40%, transparent); }
+/* No per-row ETM/ATM tag: the sticky team band above each block already says which
+   team the rows belong to, so repeating it on every name was pure noise. */
 
 .matrix tbody tr:hover td { background: var(--wash); }
 .matrix tbody tr:hover .col-name, .matrix tbody tr:hover .col-sl { background: var(--wash); }
@@ -439,7 +431,15 @@ h2 { font-size: 15px; }
   color: var(--text-primary);
 }
 
-.col-total { font-weight: 700; border-left: 1px solid var(--border-strong); text-align: center; }
+/* Total sits immediately after the name so the headline number is readable without
+   crossing the whole grid; it keeps its heavy rules on both sides. */
+.col-total {
+  width: 56px;
+  font-weight: 700;
+  border-left: 1px solid var(--border-strong);
+  border-right: 1px solid var(--border-strong);
+  text-align: center;
+}
 
 /* The team band parks immediately below the locked header (--head-h is measured in
    renderMatrix), so you always know whether the row you are reading is ETM or ATM. */

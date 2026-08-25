@@ -309,9 +309,9 @@
     const head = `<thead><tr>
       <th class="col-sl">#</th>
       <th class="col-name" data-sort="name">Team member${arrow('name')}</th>
+      <th class="col-total" data-sort="total">Total${arrow('total')}</th>
       ${COLUMNS.map(c =>
         `<th data-sort="${c.key}" title="${escapeHtml(c.statuses.join(', '))}">${escapeHtml(c.label)}${arrow(c.key)}</th>`).join('')}
-      <th class="col-total" data-sort="total">Total${arrow('total')}</th>
     </tr></thead>`;
 
     let body = '';
@@ -329,14 +329,14 @@
 
       body += `<tr>
         <td class="col-sl">${sl}</td>
-        <td class="col-name"><span class="team-tag team-${m.team}">${m.team}</span><span class="member-name">${escapeHtml(m.name)}</span><span class="member-code">${escapeHtml(m.loginId)}</span></td>
+        <td class="col-name"><span class="member-name">${escapeHtml(m.name)}</span><span class="member-code">${escapeHtml(m.loginId)}</span></td>
+        <td class="col-total">${memberTotal(m)}</td>
         ${COLUMNS.map(c => {
           const v = colValue(c, m.statuses);
           return v
             ? `<td><span class="cell-v"${heatStyle(v, max)}>${v}</span></td>`
             : '<td class="cell-zero">0</td>';
         }).join('')}
-        <td class="col-total">${memberTotal(m)}</td>
       </tr>`;
     });
 
@@ -348,8 +348,8 @@
       <tr class="total-row">
         <td class="col-sl"></td>
         <td class="col-name">Total (each student counted once)</td>
-        ${COLUMNS.map(c => `<td>${colAssignedTotal(c, r)}</td>`).join('')}
         <td class="col-total">${cohort}</td>
+        ${COLUMNS.map(c => `<td>${colAssignedTotal(c, r)}</td>`).join('')}
       </tr>`;
 
     el.table.innerHTML = head + `<tbody>${body}</tbody><tfoot>${foot}</tfoot>`;
