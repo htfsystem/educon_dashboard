@@ -373,35 +373,209 @@
   }
 
   // ---------- Excel export ----------
-  // SpreadsheetML 2003: a genuine Excel file with typed numeric cells and styling,
-  // produced with no library and no network call.
+  // A real .xlsx (Office Open XML in a ZIP), written by hand — no library, no CDN.
+  // The previous export was SpreadsheetML 2003 saved under an .xls name, which made
+  // Excel warn "the file format and extension don't match" on every open. A genuine
+  // xlsx matches its extension, so it opens silently.
+
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n += 1) {
+      let c = n;
+      for (let k = 0; k < 8; k += 1) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  function crc32(bytes) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < bytes.length; i += 1) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  /** ZIP with every entry stored uncompressed — the only method needing no deflate. */
+  function zipStore(files) {
+    const enc = new TextEncoder();
+    const parts = [];
+    const central = [];
+    let offset = 0;
+
+    files.forEach(f => {
+      const name = enc.encode(f.name);
+      const data = enc.encode(f.data);
+      const crc = crc32(data);
+
+      const local = new Uint8Array(30 + name.length);
+      const lv = new DataView(local.buffer);
+      lv.setUint32(0, 0x04034b50, true);
+      lv.setUint16(4, 20, true);      // version needed to extract
+      lv.setUint16(6, 0x0800, true);  // UTF-8 file names
+      lv.setUint16(8, 0, true);       // method 0 = stored
+      lv.setUint16(12, 0x0021, true); // fixed 1980-01-01 date, so exports are reproducible
+      lv.setUint32(14, crc, true);
+      lv.setUint32(18, data.length, true);
+      lv.setUint32(22, data.length, true);
+      lv.setUint16(26, name.length, true);
+      local.set(name, 30);
+
+      const cd = new Uint8Array(46 + name.length);
+      const cv = new DataView(cd.buffer);
+      cv.setUint32(0, 0x02014b50, true);
+      cv.setUint16(4, 20, true);
+      cv.setUint16(6, 20, true);
+      cv.setUint16(8, 0x0800, true);
+      cv.setUint16(14, 0x0021, true);
+      cv.setUint32(16, crc, true);
+      cv.setUint32(20, data.length, true);
+      cv.setUint32(24, data.length, true);
+      cv.setUint16(28, name.length, true);
+      cv.setUint32(42, offset, true);
+      cd.set(name, 46);
+
+      parts.push(local, data);
+      offset += local.length + data.length;
+      central.push(cd);
+    });
+
+    const cdStart = offset;
+    let cdSize = 0;
+    central.forEach(c => { parts.push(c); cdSize += c.length; });
+
+    const end = new Uint8Array(22);
+    const ev = new DataView(end.buffer);
+    ev.setUint32(0, 0x06054b50, true);
+    ev.setUint16(8, central.length, true);
+    ev.setUint16(10, central.length, true);
+    ev.setUint32(12, cdSize, true);
+    ev.setUint32(16, cdStart, true);
+    parts.push(end);
+
+    return new Blob(parts, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+  }
+
+  /** 0 -> A, 25 -> Z, 26 -> AA. */
+  function colLetter(n) {
+    let s = '';
+    let i = n + 1;
+    while (i > 0) {
+      const m = (i - 1) % 26;
+      s = String.fromCharCode(65 + m) + s;
+      i = (i - m - 1) / 26;
+    }
+    return s;
+  }
+
+  /**
+   * Style ids used below, matching the order of <cellXfs> in styles.xml:
+   * 0 default · 1 title · 2 info strip · 3 column header · 4 text · 5 number ·
+   * 6 team band · 7 subtotal label · 8 subtotal number · 9 grand label · 10 grand number ·
+   * 11 note · 12 note key
+   */
+  const S = {
+    def: 0, title: 1, info: 2, head: 3, txt: 4, num: 5,
+    sect: 6, totL: 7, tot: 8, grandL: 9, grand: 10, note: 11, noteKey: 12
+  };
+
+  /** A cell: numbers stay numeric so Excel can sum them; text goes inline. */
+  const xc = (ref, v, s) => {
+    const style = s ? ` s="${s}"` : '';
+    if (typeof v === 'number' && Number.isFinite(v)) return `<c r="${ref}"${style}><v>${v}</v></c>`;
+    if (v === null || v === undefined || v === '') return `<c r="${ref}"${style}/>`;
+    return `<c r="${ref}"${style} t="inlineStr"><is><t xml:space="preserve">${escapeHtml(v)}</t></is></c>`;
+  };
+
+  /**
+   * Builds one worksheet. `rows` is an array of { cells: [v|{v,s}], s, height },
+   * `merges` a list of A1-style ranges, `cols` a list of { w, wrap }.
+   */
+  function sheetXml(rows, merges, cols, freezeRow) {
+    const colsXml = cols.length
+      ? `<cols>${cols.map((c, i) =>
+        `<col min="${i + 1}" max="${i + 1}" width="${c.w}" customWidth="1"/>`).join('')}</cols>`
+      : '';
+
+    const body = rows.map((r, ri) => {
+      const n = ri + 1;
+      const cells = r.cells.map((c, ci) => {
+        const o = (c && typeof c === 'object' && !Array.isArray(c)) ? c : { v: c, s: r.s };
+        return xc(`${colLetter(ci)}${n}`, o.v, o.s === undefined ? r.s : o.s);
+      }).join('');
+      const h = r.height ? ` ht="${r.height}" customHeight="1"` : '';
+      return `<row r="${n}"${h}>${cells}</row>`;
+    }).join('');
+
+    const pane = freezeRow
+      ? `<sheetView workbookViewId="0"><pane ySplit="${freezeRow}" topLeftCell="A${freezeRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView>`
+      : '<sheetView workbookViewId="0"/>';
+
+    const mergeXml = merges.length
+      ? `<mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>`
+      : '';
+
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+      `<sheetViews>${pane}</sheetViews>` +
+      `<sheetFormatPr defaultRowHeight="15"/>${colsXml}` +
+      `<sheetData>${body}</sheetData>${mergeXml}` +
+      `<pageMargins left="0.4" right="0.4" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>` +
+      `</worksheet>`;
+  }
+
+  const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="6">
+ <font><sz val="11"/><name val="Calibri"/></font>
+ <font><b/><sz val="16"/><color rgb="FF1F5FAE"/><name val="Calibri"/></font>
+ <font><sz val="10"/><color rgb="FF595959"/><name val="Calibri"/></font>
+ <font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+ <font><b/><sz val="11"/><name val="Calibri"/></font>
+ <font><b/><sz val="10"/><color rgb="FF333333"/><name val="Calibri"/></font>
+</fonts>
+<fills count="6">
+ <fill><patternFill patternType="none"/></fill>
+ <fill><patternFill patternType="gray125"/></fill>
+ <fill><patternFill patternType="solid"><fgColor rgb="FF2A78D6"/><bgColor indexed="64"/></patternFill></fill>
+ <fill><patternFill patternType="solid"><fgColor rgb="FFEEF4FC"/><bgColor indexed="64"/></patternFill></fill>
+ <fill><patternFill patternType="solid"><fgColor rgb="FFF2F6FB"/><bgColor indexed="64"/></patternFill></fill>
+ <fill><patternFill patternType="solid"><fgColor rgb="FF1F5FAE"/><bgColor indexed="64"/></patternFill></fill>
+</fills>
+<borders count="2">
+ <border><left/><right/><top/><bottom/><diagonal/></border>
+ <border>
+  <left style="thin"><color rgb="FFB7C2CE"/></left>
+  <right style="thin"><color rgb="FFB7C2CE"/></right>
+  <top style="thin"><color rgb="FFB7C2CE"/></top>
+  <bottom style="thin"><color rgb="FFB7C2CE"/></bottom>
+  <diagonal/>
+ </border>
+</borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="13">
+ <xf xfId="0" numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+ <xf xfId="0" numFmtId="0" fontId="1" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="2" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="3" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="0" fillId="0" borderId="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="0" fillId="0" borderId="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="4" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="4" fillId="4" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="4" fillId="4" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="3" fillId="5" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="3" fillId="5" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="2" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="top" wrapText="1"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="5" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
+</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+
   function exportExcel() {
     const r = state.report;
     const rows = visibleMembers();
-    const xe = s => escapeHtml(s);
     const cohort = trackedTotal(r);
-
-    // Numbers default to the centred, fully bordered style; text to the left-aligned
-    // one — so every cell in the sheet carries a row and column rule.
-    const cell = (v, style) => typeof v === 'number'
-      ? `<Cell ss:StyleID="${style || 'num'}"><Data ss:Type="Number">${v}</Data></Cell>`
-      : `<Cell ss:StyleID="${style || 'txt'}"><Data ss:Type="String">${xe(v ?? '')}</Data></Cell>`;
-
-    /** A plain, border-free cell — used only in the header/notes block above the table. */
-    const bare = (v, style) =>
-      `<Cell${style ? ` ss:StyleID="${style}"` : ''}><Data ss:Type="String">${xe(v ?? '')}</Data></Cell>`;
-
-    const row = (cells) => `<Row>${cells}</Row>`;
-
     const rec = r.reconciliation;
-
-    // Only what the end user actually needs on the front sheet: which year, when it was
-    // pulled, and from where. The counting rules and reconciliation live on sheet 2.
-    const infoRows = [
-      ['Academic year', r.academicYear],
-      ['Generated', new Date().toLocaleString()],
-      ['Database', `${state.database || 'educon_prod'} (read-only)`]
-    ];
 
     const reconRows = [
       ['Cohort total (records this year)', rec.cohortTotal],
@@ -412,114 +586,160 @@
       ['Tracked total (9 pipeline columns)', cohort]
     ];
 
-    // One continuous hairline on all four sides of every table cell.
-    const BORDERS = '<Borders>' +
-      ['Top', 'Bottom', 'Left', 'Right']
-        .map(p => `<Border ss:Position="${p}" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B7C2CE"/>`)
-        .join('') + '</Borders>';
+    // Column order matches the on-screen matrix exactly: Total sits beside the name,
+    // ahead of the nine status columns, so the headline number is read first.
+    const headers = ['Sl', 'Name of the ETM/ATM', 'Code', 'Total', ...COLUMNS.map(c => c.label)];
+    const NCOL = headers.length;
+    const last = colLetter(NCOL - 1);
 
-    let xml = `<?xml version="1.0"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-<Styles>
- <Style ss:ID="title"><Font ss:Bold="1" ss:Size="14"/></Style>
- <Style ss:ID="sub"><Font ss:Size="10" ss:Color="#595959"/></Style>
- <Style ss:ID="note"><Font ss:Size="10" ss:Color="#595959"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Top" ss:WrapText="1"/></Style>
- <Style ss:ID="noteKey"><Font ss:Size="10" ss:Bold="1" ss:Color="#333333"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Top"/></Style>
- <Style ss:ID="head"><Font ss:Bold="1" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#2A78D6" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
-   ${BORDERS}</Style>
- <Style ss:ID="sect"><Font ss:Bold="1"/><Interior ss:Color="#EEF4FC" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>${BORDERS}</Style>
- <Style ss:ID="txt"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/>${BORDERS}</Style>
- <Style ss:ID="num"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/>${BORDERS}</Style>
- <Style ss:ID="tot"><Font ss:Bold="1"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-   <Interior ss:Color="#F2F6FB" ss:Pattern="Solid"/>${BORDERS}</Style>
- <Style ss:ID="totL"><Font ss:Bold="1"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-   <Interior ss:Color="#F2F6FB" ss:Pattern="Solid"/>${BORDERS}</Style>
- <Style ss:ID="grand"><Font ss:Bold="1" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#1F5FAE" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>${BORDERS}</Style>
- <Style ss:ID="grandL"><Font ss:Bold="1" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#1F5FAE" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>${BORDERS}</Style>
-</Styles>
-<Worksheet ss:Name="Status Summary">
-<Table>
- <Column ss:Width="30"/><Column ss:Width="150"/><Column ss:Width="52"/>
- ${COLUMNS.map(() => '<Column ss:Width="74"/>').join('')}
- <Column ss:Width="52"/>
- ${row(bare('EduCon — Student Status Summary Sheet', 'title'))}
- ${infoRows.map(([k, v]) => row(bare(k, 'noteKey') + bare(v, 'note'))).join('\n ')}
- ${row('')}
- ${row(['Sl', 'Name of the ETM/ATM', 'Code', ...COLUMNS.map(c => c.label), 'Total']
-     .map(h => cell(h, 'head')).join(''))}`;
+    const sheet = [];
+    const merges = [];
+
+    // The title and the info strip each span the full width of the table, so nothing
+    // is clipped by the column beneath it.
+    sheet.push({ cells: [{ v: 'EduCon — Student Status Summary', s: S.title }], height: 26 });
+    merges.push(`A1:${last}1`);
+
+    sheet.push({
+      cells: [{
+        v: `Academic year: ${r.academicYear}     ·     Generated: ${new Date().toLocaleString()}` +
+           `     ·     Database: ${state.database || 'educon_prod'} (read-only)`,
+        s: S.info
+      }],
+      height: 18
+    });
+    merges.push(`A2:${last}2`);
+
+    sheet.push({ cells: [] });
+    sheet.push({ cells: headers.map(h => ({ v: h, s: S.head })), height: 44 });
+    const HEAD_ROW = 4;
 
     const teamLabel = t => t === 'ETM' ? 'Educon Team Members (ETM)' : 'Alumni Team Members (ATM)';
 
-    // A subtotal row closes each team block, so the sheet answers "how much is ETM
-    // carrying vs ATM" without the reader having to re-add the rows by hand.
-    const subtotalRow = (label, group) => row([
-      cell('', 'totL'), cell(label, 'totL'), cell('', 'totL'),
-      ...COLUMNS.map(c => cell(group.reduce((n, m) => n + colValue(c, m.statuses), 0), 'tot')),
-      cell(group.reduce((n, m) => n + memberTotal(m), 0), 'tot')
-    ].join(''));
+    /** A subtotal closes each team block, so ETM vs ATM load is readable without re-adding. */
+    const pushSubtotal = (team, group) => {
+      sheet.push({
+        cells: [
+          { v: `${teamLabel(team)} — subtotal`, s: S.totL }, { v: '', s: S.totL }, { v: '', s: S.totL },
+          { v: group.reduce((n, m) => n + memberTotal(m), 0), s: S.tot },
+          ...COLUMNS.map(c => ({ v: group.reduce((n, m) => n + colValue(c, m.statuses), 0), s: S.tot }))
+        ]
+      });
+      merges.push(`A${sheet.length}:C${sheet.length}`);
+    };
 
     let lastTeam = null, sl = 0, group = [];
     rows.forEach(m => {
       if (m.team !== lastTeam) {
-        if (group.length) xml += subtotalRow(`${teamLabel(lastTeam)} — subtotal`, group);
+        if (group.length) pushSubtotal(lastTeam, group);
         lastTeam = m.team;
         sl = 0;
         group = [];
-        xml += row(cell(teamLabel(m.team), 'sect') +
-          Array(COLUMNS.length + 2).fill(cell('', 'sect')).join(''));
+        // Banded across the full width, so the team name is never cut off by column A.
+        sheet.push({ cells: headers.map((_, i) => ({ v: i === 0 ? teamLabel(m.team) : '', s: S.sect })) });
+        merges.push(`A${sheet.length}:${last}${sheet.length}`);
       }
       sl += 1;
       group.push(m);
-      xml += row([
-        cell(sl), cell(m.name), cell(m.loginId),
-        ...COLUMNS.map(c => cell(colValue(c, m.statuses))),
-        cell(memberTotal(m), 'tot')
-      ].join(''));
+      sheet.push({
+        cells: [
+          { v: sl, s: S.num }, { v: m.name, s: S.txt }, { v: m.loginId, s: S.txt },
+          { v: memberTotal(m), s: S.tot },
+          ...COLUMNS.map(c => ({ v: colValue(c, m.statuses), s: S.num }))
+        ]
+      });
     });
-    if (group.length) xml += subtotalRow(`${teamLabel(lastTeam)} — subtotal`, group);
+    if (group.length) pushSubtotal(lastTeam, group);
 
-    xml += row([cell('', 'grandL'), cell('DISTINCT TOTAL (each student counted once)', 'grandL'), cell('', 'grandL'),
-      ...COLUMNS.map(c => cell(colAssignedTotal(c, r), 'grand')),
-      cell(cohort, 'grand')].join(''));
+    sheet.push({
+      cells: [
+        { v: 'Grand Total', s: S.grandL }, { v: '', s: S.grandL }, { v: '', s: S.grandL },
+        { v: cohort, s: S.grand },
+        ...COLUMNS.map(c => ({ v: colAssignedTotal(c, r), s: S.grand }))
+      ]
+    });
+    merges.push(`A${sheet.length}:C${sheet.length}`);
 
-    xml += `</Table></Worksheet>`;
+    // Wide enough that every header label wraps to at most two lines and stays readable.
+    const cols = [{ w: 5 }, { w: 32 }, { w: 10 }, { w: 9 }, ...COLUMNS.map(() => ({ w: 15 }))];
 
-    // Sheet 2 — what each column actually means in the database, plus the
-    // reconciliation figures, so the numbers can be defended away from the dashboard.
-    xml += `<Worksheet ss:Name="Notes &amp; Definitions"><Table>
- <Column ss:Width="220"/><Column ss:Width="300"/>
- ${row(bare('Column definitions — exact database statuses', 'title'))}
- ${row(cell('Dashboard column', 'head') + cell('Exact application_status value(s)', 'head'))}
- ${COLUMNS.map(c => row(cell(c.label) + cell(c.statuses.join(', ')))).join('\n ')}
- ${row('')}
- ${row(bare('Reconciliation', 'title'))}
- ${row(cell('Measure', 'head') + cell('Value', 'head'))}
- ${reconRows.map(([k, v]) => row(cell(k) + cell(v))).join('\n ')}
- ${row('')}
- ${row(bare('Excluded from every figure above: REACHED_CAREER_POINT, REJECTED, CASE_CLOSED. Pseudo-user accounts (rcp, clo, E300, as) are not people and are filtered out of the roster.', 'note'))}
-</Table></Worksheet></Workbook>`;
+    // Sheet 2 — what each column means in the database, plus the reconciliation, so the
+    // numbers can be defended away from the dashboard.
+    const notes = [];
+    const nMerges = [];
+    notes.push({ cells: [{ v: 'Column definitions — exact database statuses', s: S.title }], height: 24 });
+    nMerges.push('A1:B1');
+    notes.push({ cells: [{ v: 'Dashboard column', s: S.head }, { v: 'Exact application_status value(s)', s: S.head }] });
+    COLUMNS.forEach(c => notes.push({ cells: [{ v: c.label, s: S.txt }, { v: c.statuses.join(', '), s: S.txt }] }));
+    notes.push({ cells: [] });
+    notes.push({ cells: [{ v: 'Reconciliation', s: S.title }], height: 24 });
+    nMerges.push(`A${notes.length}:B${notes.length}`);
+    notes.push({ cells: [{ v: 'Measure', s: S.head }, { v: 'Value', s: S.head }] });
+    reconRows.forEach(([k, v]) => notes.push({
+      cells: [{ v: k, s: S.txt }, { v, s: typeof v === 'number' ? S.num : S.txt }]
+    }));
+    notes.push({ cells: [] });
+    notes.push({
+      cells: [{
+        v: 'Excluded from every figure above: REACHED_CAREER_POINT, REJECTED, CASE_CLOSED. ' +
+           'Pseudo-user accounts (rcp, clo, E300, as) are not people and are filtered out of the roster.',
+        s: S.note
+      }],
+      height: 30
+    });
+    nMerges.push(`A${notes.length}:B${notes.length}`);
 
-    const blob = new Blob(['﻿', xml], { type: 'application/vnd.ms-excel' });
+    const files = [
+      {
+        name: '[Content_Types].xml',
+        data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`
+      },
+      {
+        name: '_rels/.rels',
+        data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`
+      },
+      {
+        name: 'xl/workbook.xml',
+        data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets>
+<sheet name="Status Summary" sheetId="1" r:id="rId1"/>
+<sheet name="Notes &amp; Definitions" sheetId="2" r:id="rId2"/>
+</sheets>
+</workbook>`
+      },
+      {
+        name: 'xl/_rels/workbook.xml.rels',
+        data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`
+      },
+      { name: 'xl/styles.xml', data: STYLES_XML },
+      { name: 'xl/worksheets/sheet1.xml', data: sheetXml(sheet, merges, cols, HEAD_ROW) },
+      { name: 'xl/worksheets/sheet2.xml', data: sheetXml(notes, nMerges, [{ w: 30 }, { w: 46 }], 0) }
+    ];
+
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `EduCon-Status-Summary-${r.academicYear}.xls`;
+    a.href = URL.createObjectURL(zipStore(files));
+    a.download = `EduCon-Status-Summary-${r.academicYear}.xlsx`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
+
 
   function renderAll() {
     renderStatusChart();
