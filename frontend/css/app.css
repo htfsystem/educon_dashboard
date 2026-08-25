@@ -369,6 +369,8 @@ body[data-page="users"] .topbar-controls { display: none; }
 .hero-h em { font-style: normal; color: var(--ec-gold-300); }
 /* Nothing follows the sub now, so it carries no trailing margin of its own. */
 .hero-sub { color: #cfdff8; font-size: 13.5px; line-height: 1.5; max-width: 78ch; margin: 0; }
+/* An error-only subtitle takes no space until it has something to say. */
+.hero-sub:empty { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .hero-glow, .live-dot, .login-aura { animation: none; }

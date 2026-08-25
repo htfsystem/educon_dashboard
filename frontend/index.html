@@ -237,7 +237,8 @@
         <span class="hero-live"><i class="live-dot"></i><span id="heroLive">Live · educon_prod</span></span>
       </div>
       <h2 class="hero-h" id="heroHeadline">Loading the pipeline…</h2>
-      <p class="hero-sub" id="heroSub">Every student's position in the approval and disbursement pipeline, for the selected academic year.</p>
+      <!-- No standing subtitle: this node is an error surface only (see renderOverview). -->
+      <p class="hero-sub" id="heroSub"></p>
     </div>
   </section>
 
@@ -372,6 +373,7 @@
 
 <div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>
 
+<script src="js/columns.js"></script>
 <script src="js/dashboard.js"></script>
 <script src="js/app.js"></script>
 </body>

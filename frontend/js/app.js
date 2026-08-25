@@ -18,8 +18,11 @@
   // ---------- HTTP ----------
 
   async function api(url, options = {}) {
+    // no-store: these figures move during the working day, and a cached 200 would
+    // leave the hero quoting a number the database no longer holds.
     const res = await fetch(url, {
       credentials: 'same-origin',
+      cache: 'no-store',
       headers: options.body ? { 'Content-Type': 'application/json' } : {},
       ...options
     });
@@ -335,25 +338,36 @@
 
   function renderOverview() {
     const o = state.overview;
-    const h = o.headline;
     const n = v => Number(v ?? 0).toLocaleString();
-    const pct = v => (o.cohortTotal ? Math.round((v / o.cohortTotal) * 100) : 0);
+
+    // Both figures are summed from assignedStatusTotals over the shared column list,
+    // which is exactly how the Status Summary builds its Grand Total row. So the
+    // headline always equals that row — it is not the raw cohort count, which would
+    // include rejected, closed, career-point, budget-pending and unassigned students
+    // that the matrix does not report.
+    const disbursedCol = window.PIPELINE_COLUMNS.find(c => c.key === 'STUDENT_DISBURSED');
+    const tracked = window.trackedFrom(o.assignedStatusTotals);
+    const disbursed = window.colValue(disbursedCol, o.assignedStatusTotals);
 
     $('heroLive').textContent = `Live · educon_prod · ${o.academicYear}`;
     $('heroHeadline').innerHTML =
-      `${n(o.cohortTotal)} students tracked, <em>${n(h.disbursed)} disbursed</em> so far.`;
-    $('heroSub').textContent =
-      `Academic year ${o.academicYear}. ${n(h.disbursed)} of ${n(o.cohortTotal)} students ` +
-      `(${pct(h.disbursed)}%) have been disbursed, ${n(h.active)} are still moving through ` +
-      `the pipeline, and ${n(o.reconciliation.assignedDistinct)} of the cohort are held by ` +
-      `a named handler.`;
+      `${n(tracked)} students tracked, <em>${n(disbursed)} disbursed</em> so far.`;
+    // No standing explanation under the hero — the headline carries the figure and
+    // this node is left as an error surface only (see the catch blocks above).
+    $('heroSub').textContent = '';
   }
 
   // The matrix auto-refreshes every two minutes; the hero is refreshed on the
   // same cadence so the two can never show figures from different moments.
-  setInterval(() => {
-    if (state.page === 'dashboard' && state.user && !document.hidden) loadOverview();
-  }, 120000);
+  const heroIsLive = () => state.page === 'dashboard' && state.user && !document.hidden;
+
+  setInterval(() => { if (heroIsLive()) loadOverview(); }, 120000);
+
+  // The interval deliberately skips while the tab is hidden, so coming back could
+  // otherwise leave up to two minutes of stale figures on screen. Refreshing on the
+  // way back in means what you see on returning to the tab is what the database holds.
+  document.addEventListener('visibilitychange', () => { if (heroIsLive()) loadOverview(); });
+  window.addEventListener('online', () => { if (heroIsLive()) loadOverview(); });
 
   // ---------- Page 3: accounts ----------
 

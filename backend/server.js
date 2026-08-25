@@ -199,6 +199,11 @@ app.get('/api/overview', auth.requirePermission('view:dashboard'), route(async r
     academicYear: year,
     cohortTotal: report.reconciliation.cohortTotal,
     headline: { disbursed, active, attention, dormant },
+    // The hero quotes the same figures as the Status Summary matrix, so it sums the
+    // same per-status map the matrix's Grand Total row does: an exact DISTINCT count
+    // per status, pseudo-user-free and never double-counted. Which statuses actually
+    // count is decided client-side in js/columns.js — the one place that list lives.
+    assignedStatusTotals: report.assignedStatusTotals,
     reconciliation: report.reconciliation
   };
 }));

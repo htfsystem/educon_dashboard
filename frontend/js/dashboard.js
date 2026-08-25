@@ -5,23 +5,9 @@
   'use strict';
 
   // ---------- Status presentation ----------
-  // Display columns for the dashboard. Each column maps to one or more exact DB
-  // statuses (see pipelineService.js / CLAUDE.md for the 13 real values) — the
-  // underlying query and stored totals are never altered, only how they are grouped
-  // and labelled for display. REACHED_CAREER_POINT, REJECTED, CASE_CLOSED and
-  // BUDGET_PENDING are intentionally excluded from every column, chart and total below.
-  //
-  // CHANGE_REQUIRED is reported inside "Form Not Submitted": from the business side a
-  // form sent back for changes is not yet submitted, so the two are one number here.
-  const COLUMNS = [
-    { key: 'CREATED',            label: 'Form Not Submitted',   statuses: ['CREATED', 'CHANGE_REQUIRED'] },
-    { key: 'SCRUTINY_PENDING',   label: 'Scrutiny Pending',     statuses: ['SUBMITTED', 'REAPPLICATION_SUBMITTED'] },
-    { key: 'APPROVAL_PENDING',   label: 'Approval Pending',     statuses: ['SCRUTINY_DONE'] },
-    { key: 'SANCTION_PENDING',   label: 'Sanction Pending',     statuses: ['FIRST_LEVEL_APPROVED'] },
-    { key: 'DISBURSEMENT_PENDING', label: 'Disbursement Pending', statuses: ['FINAL_LEVEL_APPROVED'] },
-    { key: 'STUDENT_DISBURSED',  label: 'Student Disbursed',    statuses: ['STUDENT_DISBURSED'] },
-    { key: 'NO_REQUIREMENT_THIS_YEAR', label: 'No Requirement This Year', statuses: ['NO_REQUIREMENT_THIS_YEAR'] }
-  ];
+  // The reported columns are defined once, in js/columns.js, because page 1's hero
+  // sums the same array. See that file for what is excluded and why.
+  const COLUMNS = window.PIPELINE_COLUMNS;
 
   const GROUP_VAR = {
     CREATED:                '--seq-2',
@@ -33,9 +19,7 @@
     NO_REQUIREMENT_THIS_YEAR: '--text-muted'
   };
 
-  /** Sum of this column's underlying exact statuses from a { STATUS: count } map. */
-  const colValue = (col, statusMap) =>
-    col.statuses.reduce((n, s) => n + (statusMap[s] || 0), 0);
+  const colValue = window.colValue;
 
   // Member totals count only the tracked columns above — closed / rejected / reached-
   // career-point and budget-pending cases are excluded from every ETM/ATM count.
@@ -803,7 +787,13 @@
     }, 180);
   });
 
+  // Two-minute cadence, matching the hero on page 1. The interval skips while the tab
+  // is hidden, so returning to it refreshes immediately rather than showing figures
+  // that could be up to two minutes old.
   setInterval(() => { if (!document.hidden) loadYear(); }, 120000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && state.report) loadYear();
+  });
 
   // The app shell owns navigation and decides when the summary page is first shown,
   // so booting is deferred rather than firing on script load.
