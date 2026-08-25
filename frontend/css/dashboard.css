@@ -227,6 +227,8 @@ h2 { font-size: 15px; }
 }
 
 .panel-sub { margin: 3px 0 0; font-size: 12px; color: var(--text-muted); }
+/* An error-only subtitle takes no space until it has something to say. */
+.panel-sub:empty { display: none; }
 
 /* A panel subtitle doubles as the error surface now that the status line is gone. */
 .panel-sub-error { color: var(--critical); font-weight: 500; }

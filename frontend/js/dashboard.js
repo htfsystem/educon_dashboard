@@ -86,6 +86,8 @@
 
   function clearError() {
     [el.distSub, el.matrixSub].forEach(node => node.classList.remove('panel-sub-error'));
+    // The matrix has no standing subtitle — the node exists only to carry an error.
+    el.matrixSub.textContent = '';
   }
 
   // ---------- SVG helpers ----------
@@ -347,7 +349,7 @@
     const foot = `
       <tr class="total-row">
         <td class="col-sl"></td>
-        <td class="col-name">Total (each student counted once)</td>
+        <td class="col-name">Grand Total</td>
         <td class="col-total">${cohort}</td>
         ${COLUMNS.map(c => `<td>${colAssignedTotal(c, r)}</td>`).join('')}
       </tr>`;
@@ -359,10 +361,6 @@
     // than assumed — .section-row sticks to --head-h, immediately under the locked header.
     const headRow = el.table.querySelector('thead tr');
     if (headRow) el.table.style.setProperty('--head-h', `${headRow.getBoundingClientRect().height}px`);
-
-    el.matrixSub.textContent =
-      `${rows.length} members × ${COLUMNS.length} columns · ${state.year} · ` +
-      `each student counted under exactly one handler, so the rows add up to the total row`;
 
     el.table.querySelectorAll('th[data-sort]').forEach(th => {
       th.addEventListener('click', () => {
