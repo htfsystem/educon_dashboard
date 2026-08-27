@@ -286,6 +286,25 @@ async function getYearReport(pool, year) {
 // The two are easy to swap and the wrong one still returns rows, just far fewer:
 // 1361 vs 101 for the mapping join, 728 vs 23 for the sanction join.
 
+/**
+ * Payment vouchers, de-duplicated. DO NOT SUM THE TABLE DIRECTLY.
+ *
+ * educon_payment_transaction_details holds 31 groups (32 extra rows) where one voucher
+ * was saved twice: identical student, year, voucher number, voucher date, amount, bank
+ * transaction id and cheque number — only pt_id differs, so pt_id being unique is no
+ * protection. A plain SUM booked ₹100,000 paid to student 22292 as ₹200,000, and
+ * inflated 2025-2026 by ₹463,019.
+ *
+ * The natural key is (student, year, voucher number). Verified safe: there is no group
+ * sharing that key with a differing amount or purpose, so no genuine split payment is
+ * lost, and no voucher number is NULL or 0.
+ */
+const DISTINCT_PAYMENTS = `
+  SELECT DISTINCT s_id, pt_academic_year, pt_payment_voucher_no,
+                  pt_voucher_date, pt_amount_disbursed
+    FROM educon_payment_transaction_details
+   WHERE COALESCE(pt_cancel_tag, 'N') <> 'Y'`;
+
 /** The one-handler-per-student pick, shared with getMatrix. See that function's note. */
 const OWNER_PICK = `
   (SELECT m2.etm_id
@@ -380,10 +399,11 @@ async function getStudentList(pool, { year, etmId = null, statuses = [] }) {
  *             more than one sanction row and in every one of them the amounts are
  *             identical — they are re-saves of the same decision, so summing would book
  *             a 50,000 sanction as 150,000.
- * Disbursed   SUM of the year's payment vouchers, cancelled ones excluded.
- * Pending     sanctioned - disbursed. Left signed rather than clamped: a few students
- *             are genuinely paid more than the year's sanction row records (top-ups
- *             paid without a fresh sanction), and hiding that would misreport the data.
+ * Disbursed   SUM over DISTINCT_PAYMENTS, not over the raw table — the same duplicate
+ *             trap sits in the payments table too. See that constant.
+ * Pending     sanctioned - disbursed. Left signed rather than clamped: even after
+ *             de-duplication some students are paid more in a year than that year's
+ *             sanction row records, and clamping to zero would hide it.
  */
 async function getStudentDetail(pool, studentId) {
   const [[who]] = await pool.query(`
@@ -414,11 +434,9 @@ async function getStudentDetail(pool, studentId) {
       COALESCE((SELECT MAX(f.amount_sanctioned)
                   FROM educon_student_final_approval_and_sanction f
                  WHERE f.s_id = a.s_id AND f.academic_year = a.academic_year), 0) AS sanctioned,
-      COALESCE((SELECT SUM(p.pt_amount_disbursed)
-                  FROM educon_payment_transaction_details p
-                 WHERE p.s_id = a.user_id
-                   AND p.pt_academic_year = a.academic_year
-                   AND COALESCE(p.pt_cancel_tag, 'N') <> 'Y'), 0) AS disbursed
+      COALESCE((SELECT SUM(d.pt_amount_disbursed) FROM (${DISTINCT_PAYMENTS}) d
+                 WHERE d.s_id = a.user_id
+                   AND d.pt_academic_year = a.academic_year), 0) AS disbursed
     FROM educon_user_academic_details a
     WHERE a.user_id = ?
     ORDER BY a.academic_year DESC
