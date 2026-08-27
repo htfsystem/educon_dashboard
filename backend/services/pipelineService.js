@@ -137,13 +137,7 @@ async function getMatrix(pool, year) {
       SELECT
         a.user_id,
         a.application_status AS status,
-        (SELECT m2.etm_id
-           FROM educon_user_etm_mapping m2
-           INNER JOIN educon_user_profile p2 ON p2.u_id = m2.etm_id
-          WHERE m2.s_id = a.user_id
-            AND p2.login_id NOT IN (${pseudoList()})
-          ORDER BY m2.is_senior ASC, m2.etm_id ASC
-          LIMIT 1) AS ownerId
+        ${OWNER_PICK} AS ownerId
       FROM educon_user_academic_details a
       WHERE a.academic_year = ?
     ) pick
@@ -279,6 +273,178 @@ async function getYearReport(pool, year) {
   };
 }
 
+// ---------------------------------------------------------------- drill-down
+//
+// KEY SHAPES — verified against educon_prod on 2026-08-27, do not re-derive:
+//
+//   educon_user_academic_details.user_id  is the STUDENT (the person).
+//     -> joins educon_user_etm_mapping.s_id, educon_user_profile.u_id,
+//        educon_student_personal_details.s_id, educon_payment_transaction_details.s_id
+//   educon_user_academic_details.s_id     is the CASE row (one student, one year).
+//     -> joins educon_student_final_approval_and_sanction.s_id (+ academic_year)
+//
+// The two are easy to swap and the wrong one still returns rows, just far fewer:
+// 1361 vs 101 for the mapping join, 728 vs 23 for the sanction join.
+
+/** The one-handler-per-student pick, shared with getMatrix. See that function's note. */
+const OWNER_PICK = `
+  (SELECT m2.etm_id
+     FROM educon_user_etm_mapping m2
+     INNER JOIN educon_user_profile p2 ON p2.u_id = m2.etm_id
+    WHERE m2.s_id = a.user_id
+      AND p2.login_id NOT IN (${pseudoList()})
+    ORDER BY m2.is_senior ASC, m2.etm_id ASC
+    LIMIT 1)`;
+
+/**
+ * A student's display name. educon_user_profile carries 461 of the 462 students and is
+ * the only source with a readable code (login_id, e.g. "e617"), so it leads;
+ * educon_student_personal_details (374 rows) fills the gaps.
+ */
+function studentName(row) {
+  const fromProfile = `${row.u_fname || ''} ${row.u_lname || ''}`;
+  const fromPersonal = `${row.sp_fname || ''} ${row.sp_lname || ''}`;
+  const pick = fromProfile.trim() ? fromProfile : fromPersonal;
+  const name = pick.replace(/[`,]/g, ' ').replace(/\s+/g, ' ').trim();
+  return name || row.studentCode || `Student ${row.studentId}`;
+}
+
+/**
+ * The students behind one number in the matrix.
+ *
+ * `etmId` null means the Grand Total row: every student a real person handles. That is
+ * the same population `getAssignedStatusTotals` counts — a student has an owner in the
+ * pick above exactly when they have at least one non-pseudo mapping — so a cell and its
+ * list can never disagree about how many students there are.
+ *
+ * `statuses` is the exact DB status list behind the clicked column, sent by the client
+ * from js/columns.js. Keeping it client-side is what stops the column definitions from
+ * being duplicated on the server and drifting.
+ */
+async function getStudentList(pool, { year, etmId = null, statuses = [] }) {
+  if (!statuses.length) return [];
+
+  const statusList = statuses.map(() => '?').join(',');
+  const ownerClause = etmId === null ? 'pick.ownerId IS NOT NULL' : 'pick.ownerId = ?';
+
+  // Placeholder order follows the SQL text: the correlated pick (pseudo users) sits in
+  // the SELECT list and so binds first, then the year, then the statuses, then the owner.
+  const params = [...PSEUDO_USERS, year, ...statuses];
+  if (etmId !== null) params.push(etmId);
+
+  const [rows] = await pool.query(`
+    SELECT
+      pick.user_id      AS studentId,
+      pick.caseId,
+      pick.status,
+      sp.login_id       AS studentCode,
+      sp.u_fname, sp.u_lname,
+      pd.sp_fname, pd.sp_lname,
+      h.login_id        AS handlerLogin,
+      h.u_fname         AS h_fname,
+      h.u_lname         AS h_lname
+    FROM (
+      SELECT
+        a.user_id,
+        a.s_id                AS caseId,
+        a.application_status  AS status,
+        ${OWNER_PICK}         AS ownerId
+      FROM educon_user_academic_details a
+      WHERE a.academic_year = ?
+        AND a.application_status IN (${statusList})
+    ) pick
+    LEFT JOIN educon_user_profile sp ON sp.u_id = pick.user_id
+    LEFT JOIN educon_student_personal_details pd ON pd.s_id = pick.user_id
+    LEFT JOIN educon_user_profile h  ON h.u_id  = pick.ownerId
+    WHERE ${ownerClause}
+  `, params);
+
+  return rows
+    .map(r => ({
+      studentId: r.studentId,
+      caseId: r.caseId,
+      code: r.studentCode || String(r.studentId),
+      name: studentName(r),
+      status: r.status,
+      handler: r.handlerLogin
+        ? { loginId: r.handlerLogin, name: displayName({ u_fname: r.h_fname, u_lname: r.h_lname, login_id: r.handlerLogin }) }
+        : null
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * One student's money, per academic year.
+ *
+ * Sanctioned  MAX(amount_sanctioned) for the case, NOT SUM. 14 (case, year) groups carry
+ *             more than one sanction row and in every one of them the amounts are
+ *             identical — they are re-saves of the same decision, so summing would book
+ *             a 50,000 sanction as 150,000.
+ * Disbursed   SUM of the year's payment vouchers, cancelled ones excluded.
+ * Pending     sanctioned - disbursed. Left signed rather than clamped: a few students
+ *             are genuinely paid more than the year's sanction row records (top-ups
+ *             paid without a fresh sanction), and hiding that would misreport the data.
+ */
+async function getStudentDetail(pool, studentId) {
+  const [[who]] = await pool.query(`
+    SELECT
+      ? AS studentId,
+      sp.login_id AS studentCode,
+      sp.u_fname, sp.u_lname,
+      pd.sp_fname, pd.sp_lname
+    FROM (SELECT 1) one
+    LEFT JOIN educon_user_profile sp ON sp.u_id = ?
+    LEFT JOIN educon_student_personal_details pd ON pd.s_id = ?
+  `, [studentId, studentId, studentId]);
+
+  const [[owner]] = await pool.query(`
+    SELECT p.login_id, p.u_fname, p.u_lname
+    FROM educon_user_etm_mapping m
+    INNER JOIN educon_user_profile p ON p.u_id = m.etm_id
+    WHERE m.s_id = ? AND p.login_id NOT IN (${pseudoList()})
+    ORDER BY m.is_senior ASC, m.etm_id ASC
+    LIMIT 1
+  `, [studentId, ...PSEUDO_USERS]);
+
+  const [rows] = await pool.query(`
+    SELECT
+      a.academic_year       AS academicYear,
+      a.s_id                AS caseId,
+      a.application_status  AS status,
+      COALESCE((SELECT MAX(f.amount_sanctioned)
+                  FROM educon_student_final_approval_and_sanction f
+                 WHERE f.s_id = a.s_id AND f.academic_year = a.academic_year), 0) AS sanctioned,
+      COALESCE((SELECT SUM(p.pt_amount_disbursed)
+                  FROM educon_payment_transaction_details p
+                 WHERE p.s_id = a.user_id
+                   AND p.pt_academic_year = a.academic_year
+                   AND COALESCE(p.pt_cancel_tag, 'N') <> 'Y'), 0) AS disbursed
+    FROM educon_user_academic_details a
+    WHERE a.user_id = ?
+    ORDER BY a.academic_year DESC
+  `, [studentId]);
+
+  return {
+    studentId: Number(studentId),
+    code: (who && who.studentCode) || String(studentId),
+    name: studentName({ ...who, studentId }),
+    handler: owner
+      ? { loginId: owner.login_id, name: displayName({ ...owner }) }
+      : null,
+    years: rows.map(r => {
+      const sanctioned = Number(r.sanctioned);
+      const disbursed = Number(r.disbursed);
+      return {
+        academicYear: r.academicYear,
+        status: r.status,
+        sanctioned,
+        disbursed,
+        pending: sanctioned - disbursed
+      };
+    })
+  };
+}
+
 /** Per-year totals across every academic year, for the trend chart. */
 async function getYearTrend(pool) {
   const [rows] = await pool.query(`
@@ -307,6 +473,8 @@ module.exports = {
   getReconciliation,
   getYearReport,
   getYearTrend,
+  getStudentList,
+  getStudentDetail,
   STATUS_ORDER,
   TERMINAL_STATUSES,
   PSEUDO_USERS,

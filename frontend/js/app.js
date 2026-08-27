@@ -63,6 +63,7 @@
 
   function signedOut() {
     state.user = null;
+    window.EduConUser = null;
     state.overview = null;
     $('userMenuPanel').hidden = true;
     $('userMenuBtn').setAttribute('aria-expanded', 'false');
@@ -73,6 +74,10 @@
 
   function signedIn(user) {
     state.user = user;
+    // js/students.js is booted by dashboard.js, not by this file, so the signed-in
+    // user is published rather than passed. It decides only what to render — every
+    // permission is enforced again on the server.
+    window.EduConUser = user;
     $('loginScreen').hidden = true;
     $('appShell').hidden = false;
 

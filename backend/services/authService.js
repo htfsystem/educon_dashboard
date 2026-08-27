@@ -6,8 +6,8 @@
  * so there is no native module to compile.
  *
  * Roles:
- *   admin    dashboard + summary + export + manage users
- *   manager  dashboard + summary + export
+ *   admin    dashboard + summary + student finance + export + manage users
+ *   manager  dashboard + summary + student finance + export
  *   viewer   dashboard + summary
  */
 
@@ -21,9 +21,12 @@ const ROLES = ['admin', 'manager', 'viewer'];
 
 // What each role is allowed to do. Checked on the server for every protected route;
 // the frontend uses the same list only to decide what to render.
+// `view:finance` covers one student's sanctioned / disbursed / pending amounts. Those
+// are per-person money figures rather than pipeline counts, so a plain viewer can open
+// the student list behind a cell but not the amounts behind a student.
 const PERMISSIONS = {
-  admin:   ['view:dashboard', 'view:summary', 'export', 'manage:users'],
-  manager: ['view:dashboard', 'view:summary', 'export'],
+  admin:   ['view:dashboard', 'view:summary', 'view:finance', 'export', 'manage:users'],
+  manager: ['view:dashboard', 'view:summary', 'view:finance', 'export'],
   viewer:  ['view:dashboard', 'view:summary']
 };
 

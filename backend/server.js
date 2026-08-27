@@ -171,6 +171,45 @@ app.get('/api/report', auth.requirePermission('view:summary'), route(async req =
   return pipeline.getYearReport(pool, year);
 }));
 
+/**
+ * Drill-down: the students behind one number in the matrix.
+ *
+ * `statuses` is the exact DB status list for the clicked column, sent by the client so
+ * that js/columns.js stays the only place the 7 reported columns are defined. Values are
+ * bound as parameters; the shape check below is hygiene, and an unknown status simply
+ * matches nothing rather than erroring.
+ *
+ * Omit `etmId` for the Grand Total row — every student a real person handles.
+ */
+app.get('/api/students', auth.requirePermission('view:summary'), route(async req => {
+  const year = await requireYear(req);
+
+  const statuses = String(req.query.statuses || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  if (!statuses.length) throw new Error('Query parameter "statuses" is required');
+  if (statuses.length > 20 || statuses.some(s => !/^[A-Z][A-Z_]{1,48}$/.test(s))) {
+    throw new Error('Malformed "statuses" parameter');
+  }
+
+  const etmId = req.query.etmId === undefined || req.query.etmId === ''
+    ? null
+    : Number(req.query.etmId);
+  if (etmId !== null && !Number.isInteger(etmId)) throw new Error('"etmId" must be a whole number');
+
+  const students = await pipeline.getStudentList(pool, { year, etmId, statuses });
+  return { academicYear: year, etmId, statuses, count: students.length, students };
+}));
+
+/** One student's sanctioned / disbursed / pending figures, for every year they appear in. */
+app.get('/api/students/:studentId', auth.requirePermission('view:finance'), route(async req => {
+  const studentId = Number(req.params.studentId);
+  if (!Number.isInteger(studentId)) throw new Error('"studentId" must be a whole number');
+
+  const detail = await pipeline.getStudentDetail(pool, studentId);
+  if (!detail.years.length) throw new Error(`No academic record found for student ${studentId}`);
+  return detail;
+}));
+
 /** Totals per status across every academic year, for the trend chart. */
 app.get('/api/trend', auth.requirePermission('view:dashboard'), route(async () => ({
   trend: await pipeline.getYearTrend(pool)

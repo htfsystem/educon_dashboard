@@ -160,6 +160,14 @@
       state.year = el.year.value || years[0].year;
       el.year.value = state.year;
 
+      // The drill-down's own academic filter offers the same years as the page's, so
+      // both are driven by one list from /api/years.
+      window.EduConYears = years.map(y => y.year);
+
+      // Delegated once, not per render: renderMatrix replaces the table's innerHTML on
+      // every sort, filter and refresh, which would discard per-cell listeners.
+      window.EduConDrill.bind(el.table);
+
       await loadYear();
     } catch (error) {
       showError(`Could not reach the database — ${error.message}`);
@@ -171,6 +179,9 @@
     el.main.setAttribute('aria-busy', 'true');
     try {
       state.report = await getJSON(`/api/report?year=${encodeURIComponent(state.year)}`);
+      // Fresh cell figures must not sit next to a drill-down list cached from the
+      // previous fetch — a two-minute-old list under a current number reads as a bug.
+      window.EduConDrill.invalidate();
       clearError();
       renderAll();
     } catch (error) {
@@ -283,6 +294,18 @@
     return ` style="background: color-mix(in srgb, var(--series-1) ${alpha}%, var(--surface-1))"`;
   }
 
+  /**
+   * Marks a cell as a way into the students behind it — js/students.js binds hover and
+   * click to `td[data-col]` by delegation. Only non-zero cells are marked: there is no
+   * list behind a 0, and an empty popover reads as a failure rather than as an answer.
+   * Omitting data-etm means the Grand Total row: every student a real person handles.
+   */
+  const drill = (colKey, etmId, cls = '') =>
+    ` class="is-drill${cls ? ` ${cls}` : ''}" tabindex="0"` +
+    ` data-col="${colKey}" data-year="${escapeHtml(state.year)}"` +
+    (etmId ? ` data-etm="${etmId}"` : '') +
+    ' title="Show the students behind this number"';
+
   function renderMatrix() {
     const r = state.report;
     const rows = visibleMembers();
@@ -311,15 +334,20 @@
         sl = 0;
       }
       sl += 1;
+      const total = memberTotal(m);
 
-      body += `<tr>
+      // data-who names the row for the drill-down's header, so the list can say whose
+      // students it is showing without students.js having to re-read the matrix.
+      body += `<tr data-who="${escapeHtml(`${m.name} (${m.loginId})`)}">
         <td class="col-sl">${sl}</td>
         <td class="col-name"><span class="member-name">${escapeHtml(m.name)}</span><span class="member-code">${escapeHtml(m.loginId)}</span></td>
-        <td class="col-total">${memberTotal(m)}</td>
+        ${total
+          ? `<td${drill('__TOTAL__', m.etmId, 'col-total')}>${total}</td>`
+          : '<td class="col-total cell-zero">0</td>'}
         ${COLUMNS.map(c => {
           const v = colValue(c, m.statuses);
           return v
-            ? `<td><span class="cell-v"${heatStyle(v, max)}>${v}</span></td>`
+            ? `<td${drill(c.key, m.etmId)}><span class="cell-v"${heatStyle(v, max)}>${v}</span></td>`
             : '<td class="cell-zero">0</td>';
         }).join('')}
       </tr>`;
@@ -330,11 +358,16 @@
     // students held only by the rcp/clo/E300/as pseudo-user buckets.
     const cohort = trackedTotal(r);
     const foot = `
-      <tr class="total-row">
+      <tr class="total-row" data-who="All team members">
         <td class="col-sl"></td>
         <td class="col-name">Grand Total</td>
-        <td class="col-total">${cohort}</td>
-        ${COLUMNS.map(c => `<td>${colAssignedTotal(c, r)}</td>`).join('')}
+        ${cohort
+          ? `<td${drill('__TOTAL__', null, 'col-total')}>${cohort}</td>`
+          : '<td class="col-total cell-zero">0</td>'}
+        ${COLUMNS.map(c => {
+          const v = colAssignedTotal(c, r);
+          return v ? `<td${drill(c.key, null)}>${v}</td>` : '<td class="cell-zero">0</td>';
+        }).join('')}
       </tr>`;
 
     el.table.innerHTML = head + `<tbody>${body}</tbody><tfoot>${foot}</tfoot>`;
