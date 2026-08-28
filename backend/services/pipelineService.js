@@ -12,6 +12,8 @@
  *   student counts toward a year only if they actually have a row for that year.
  */
 
+const codes = require('./codeLabels');
+
 // System bucket accounts in educon_user_etm_mapping. These are not people — they are
 // holding pens the application assigns cases to. Excluded from the roster.
 const PSEUDO_USERS = ['rcp', 'clo', 'E300', 'as'];
@@ -315,6 +317,67 @@ const OWNER_PICK = `
     ORDER BY m2.is_senior ASC, m2.etm_id ASC
     LIMIT 1)`;
 
+// ------------------------------------------------------- the student's own profile
+//
+// KEYS — verified 2026-08-28 by joining each table both ways and counting. Two families,
+// and getting one wrong loses most of the rows without erroring:
+//
+//   per STUDENT, keyed by educon_user_academic_details.user_id (one row, lifetime)
+//     educon_student_personal_details          374 rows / 374 keys  (1234 vs 75)
+//     educon_student_current_address_details   378 rows / 378 keys  (1248 vs 77)
+//
+//   per CASE, keyed by educon_user_academic_details.s_id (one row per student-year)
+//     educon_student_current_education_details 940 rows / 940 keys  (939 vs 198)
+//
+// Every one of these is one row per key, so none of them fans out a join. That is why
+// the education fields can be joined straight into the student list rather than
+// aggregated: what a student studies is a fact about the *year*, and the case id is what
+// carries the year.
+const PROFILE_JOINS = `
+  LEFT JOIN educon_student_current_education_details ce ON ce.s_id = %CASE%
+  LEFT JOIN educon_student_current_address_details   ad ON ad.s_id = %STUDENT%`;
+
+const PROFILE_COLUMNS = `
+  ce.sce_education, ce.sce_branch, ce.sce_course_name, ce.sce_name AS collegeName,
+  ce.sce_college_place, ce.sce_year, ce.current_year,
+  pd.sp_gender_category_id, pd.sp_minority_id, pd.sp_food_category_id, pd.sp_family_status,
+  ad.spa_city, ad.spa_district, ad.spa_state,
+  ad.sa_city,  ad.sa_district,  ad.sa_state`;
+
+/**
+ * The eleven facts card 1 reports, decoded.
+ *
+ * Everything coded goes through codeLabels.js, which falls back to the raw code rather
+ * than to a guess — see the confidence tiers documented there. `null` means the student
+ * did not answer or has no row, and the client prints one "Not recorded" for all of them.
+ *
+ * PARENT LOCATION is the *permanent* address (spa_*), not the current one (sa_*): a
+ * student living in a Pune hostel still has parents in Junnar, and the current address
+ * is the student's. 255 of 378 rows are flagged identical anyway. It falls back to the
+ * current address for the 5 rows with no permanent city, so the field is filled wherever
+ * the database knows anything at all.
+ */
+function studentProfile(row) {
+  if (!row) return null;
+  return {
+    education: codes.label(codes.EDUCATION, row.sce_education),
+    fieldOfEducation: codes.label(codes.FIELD_OF_EDUCATION, row.sce_branch),
+    specialization: codes.label(codes.SPECIALIZATION, row.sce_course_name),
+    college: codes.text(row.collegeName),
+    studyYear: codes.studyYear(row.sce_year, row.current_year),
+    collegeCity: codes.text(row.sce_college_place),
+    gender: codes.label(codes.GENDER, row.sp_gender_category_id),
+    community: codes.casteGroup(row.sp_minority_id),
+    // The specific community answer sits beside the Jain / Non-Jain reduction rather
+    // than being replaced by it — the brief says the source is a list of many.
+    communityDetail: codes.label(codes.CASTE, row.sp_minority_id),
+    food: codes.label(codes.FOOD, row.sp_food_category_id),
+    familyStatus: codes.label(codes.FAMILY_STATUS, row.sp_family_status),
+    parentLocation: codes.place(row.spa_city, row.spa_district, row.spa_state)
+      || codes.place(row.sa_city, row.sa_district, row.sa_state)
+  };
+}
+
 /**
  * A student's display name. educon_user_profile carries 461 of the 462 students and is
  * the only source with a readable code (login_id, e.g. "e617"), so it leads;
@@ -361,7 +424,8 @@ async function getStudentList(pool, { year, etmId = null, statuses = [] }) {
       pd.sp_fname, pd.sp_lname,
       h.login_id        AS handlerLogin,
       h.u_fname         AS h_fname,
-      h.u_lname         AS h_lname
+      h.u_lname         AS h_lname,
+      ${PROFILE_COLUMNS}
     FROM (
       SELECT
         a.user_id,
@@ -375,6 +439,7 @@ async function getStudentList(pool, { year, etmId = null, statuses = [] }) {
     LEFT JOIN educon_user_profile sp ON sp.u_id = pick.user_id
     LEFT JOIN educon_student_personal_details pd ON pd.s_id = pick.user_id
     LEFT JOIN educon_user_profile h  ON h.u_id  = pick.ownerId
+    ${PROFILE_JOINS.replace('%CASE%', 'pick.caseId').replace('%STUDENT%', 'pick.user_id')}
     WHERE ${ownerClause}
   `, params);
 
@@ -385,9 +450,14 @@ async function getStudentList(pool, { year, etmId = null, statuses = [] }) {
       code: r.studentCode || String(r.studentId),
       name: studentName(r),
       status: r.status,
+      // Carried on every row, not only on the Grand Total: the same list is reachable
+      // from a member row too, and a column that appeared and vanished depending on
+      // which cell you came from would read as a bug. The client hides it when every
+      // row names the same handler, which is exactly the member-row case.
       handler: r.handlerLogin
         ? { loginId: r.handlerLogin, name: displayName({ u_fname: r.h_fname, u_lname: r.h_lname, login_id: r.handlerLogin }) }
-        : null
+        : null,
+      profile: studentProfile(r)
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -436,8 +506,11 @@ async function getStudentDetail(pool, studentId) {
                  WHERE f.s_id = a.s_id AND f.academic_year = a.academic_year), 0) AS sanctioned,
       COALESCE((SELECT SUM(d.pt_amount_disbursed) FROM (${DISTINCT_PAYMENTS}) d
                  WHERE d.s_id = a.user_id
-                   AND d.pt_academic_year = a.academic_year), 0) AS disbursed
+                   AND d.pt_academic_year = a.academic_year), 0) AS disbursed,
+      ${PROFILE_COLUMNS}
     FROM educon_user_academic_details a
+    LEFT JOIN educon_student_personal_details pd ON pd.s_id = a.user_id
+    ${PROFILE_JOINS.replace('%CASE%', 'a.s_id').replace('%STUDENT%', 'a.user_id')}
     WHERE a.user_id = ?
     ORDER BY a.academic_year DESC
   `, [studentId]);
@@ -449,6 +522,9 @@ async function getStudentDetail(pool, studentId) {
     handler: owner
       ? { loginId: owner.login_id, name: displayName({ ...owner }) }
       : null,
+    // The academic card is per year, not per student: a student is in FY Engineering in
+    // one row and TY in another, and card 1 must follow the year selector rather than
+    // showing whichever row the join happened to reach first.
     years: rows.map(r => {
       const sanctioned = Number(r.sanctioned);
       const disbursed = Number(r.disbursed);
@@ -457,7 +533,8 @@ async function getStudentDetail(pool, studentId) {
         status: r.status,
         sanctioned,
         disbursed,
-        pending: sanctioned - disbursed
+        pending: sanctioned - disbursed,
+        profile: studentProfile(r)
       };
     })
   };

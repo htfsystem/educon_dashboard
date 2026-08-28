@@ -96,6 +96,14 @@
     <symbol id="icoClose" viewBox="0 0 24 24">
       <path d="m6.75 6.75 10.5 10.5M17.25 6.75 6.75 17.25"/>
     </symbol>
+    <!-- Maximise / restore. Four corner brackets pointing out, then in — the same shape
+         reversed, so the two states read as one control rather than two icons. -->
+    <symbol id="icoExpand" viewBox="0 0 24 24">
+      <path d="M9.5 4.25H4.25V9.5M14.5 4.25h5.25V9.5M9.5 19.75H4.25V14.5M14.5 19.75h5.25V14.5"/>
+    </symbol>
+    <symbol id="icoCollapse" viewBox="0 0 24 24">
+      <path d="M4.25 9.5H9.5V4.25M19.75 9.5H14.5V4.25M4.25 14.5H9.5v5.25M19.75 14.5H14.5v5.25"/>
+    </symbol>
     <!-- Sort direction. Drawn pointing up; .sort-arrow.is-desc flips it, so ascending
          and descending are the identical shape rather than two glyphs of unequal size. -->
     <symbol id="icoCaret" viewBox="0 0 24 24">
@@ -478,6 +486,12 @@
       <span class="field-label">Academic year</span>
       <select id="drillYear" class="select"></select>
     </label>
+    <!-- Grows the dialog to the viewport, so every column of the list is readable at
+         once. js/students.js swaps the icon and the label between the two states. -->
+    <button class="dialog-close" id="drillMax" type="button"
+            aria-pressed="false" aria-label="Maximise dialog">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoExpand"/></svg>
+    </button>
     <button class="dialog-close" id="drillClose" type="button" aria-label="Close">
       <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoClose"/></svg>
     </button>
@@ -508,6 +522,8 @@
 <div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>
 
 <script src="js/columns.js"></script>
+<!-- Before students.js and dashboard.js: both mount column filters as they render. -->
+<script src="js/filters.js"></script>
 <script src="js/students.js"></script>
 <script src="js/dashboard.js"></script>
 <script src="js/app.js"></script>

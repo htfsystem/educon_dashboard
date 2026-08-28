@@ -8,8 +8,13 @@
   --surface-1: #fcfcfb;
   --page: #f9f9f7;
   --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #898781;
+  /* Both lifted a step in 2026-08-28's readability pass. #52514e and #898781 were the
+     original pair; the muted one in particular carried table headers, captions and every
+     "not recorded" dash at ~3.4:1, which is under AA for the small sizes it was used at.
+     These clear 4.5:1 on --surface-1 while still reading as three distinct weights of
+     ink rather than as three near-blacks. */
+  --text-secondary: #3f3e3b;
+  --text-muted: #6b6963;
   --grid: #e1e0d9;
   --axis: #c3c2b7;
   --border: rgba(11, 11, 11, 0.10);
@@ -60,15 +65,19 @@
      inverting to a shadow, which would read as a dent. */
   --edge-light: rgba(255, 255, 255, 0.75);
 
-  /* Type scale, ~1.15 between steps. Sizes are only ever picked from this ladder. */
-  --fs-micro: 10.5px;   /* uppercase eyebrows, table headers */
-  --fs-xs: 11.5px;      /* chips, hints, captions */
-  --fs-sm: 12.5px;      /* table body, secondary UI */
-  --fs-base: 14px;      /* body */
-  --fs-md: 15px;        /* panel headings */
-  --fs-lg: 17px;        /* page + dialog titles */
-  --fs-xl: 20px;        /* figures */
-  --fs-2xl: 28px;       /* headline figures */
+  /* Type scale, ~1.15 between steps. Sizes are only ever picked from this ladder.
+     Raised one step across the board on 2026-08-28: the dashboard is read on desk
+     monitors at arm's length rather than on a laptop, and 10.5px uppercase table headers
+     were being squinted at. Every size moved together, so the proportions between the
+     ladder's rungs are unchanged and nothing needed re-laying-out. */
+  --fs-micro: 11.5px;   /* uppercase eyebrows, table headers */
+  --fs-xs: 12.5px;      /* chips, hints, captions */
+  --fs-sm: 13.5px;      /* table body, secondary UI */
+  --fs-base: 15px;      /* body */
+  --fs-md: 16.5px;      /* panel headings */
+  --fs-lg: 19px;        /* page + dialog titles */
+  --fs-xl: 22px;        /* figures */
+  --fs-2xl: 30px;       /* headline figures */
 
   --shadow: 0 1px 2px rgba(11, 11, 11, 0.04), 0 4px 12px rgba(11, 11, 11, 0.04);
   --font: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -84,7 +93,7 @@
     --page: #0d0d0d;
     --text-primary: #ffffff;
     --text-secondary: #c3c2b7;
-    --text-muted: #898781;
+    --text-muted: #a8a69e;   /* lifted from #898781 — see the light block's note */
     --grid: #2c2c2a;
     --axis: #383835;
     --border: rgba(255, 255, 255, 0.10);
@@ -120,7 +129,7 @@
   --page: #0d0d0d;
   --text-primary: #ffffff;
   --text-secondary: #c3c2b7;
-  --text-muted: #898781;
+  --text-muted: #a8a69e;   /* lifted from #898781 — see the light block's note */
   --grid: #2c2c2a;
   --axis: #383835;
   --border: rgba(255, 255, 255, 0.10);
@@ -159,7 +168,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-h1, h2 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+/* Headings carry weight 700, not 600. At 600 the panel titles sat only one step above
+   the table body around them and the page read as one undifferentiated grey; the jump to
+   700 is what makes "Status matrix" announce a section rather than label one. */
+h1, h2, h3, h4 { margin: 0; font-weight: 700; letter-spacing: -0.01em; color: var(--text-primary); }
 h1 { font-size: var(--fs-lg); }
 h2 { font-size: var(--fs-md); }
 
@@ -533,8 +545,10 @@ h2 { font-size: var(--fs-md); }
   box-shadow: 0 1px 0 var(--border-strong);
   border-bottom: 1px solid var(--border-strong);
   font-size: var(--fs-micro);
-  font-weight: 600;
-  color: var(--text-secondary);
+  /* 700 and primary ink: these are the labels that say what each column of numbers
+     means, and at 600 in secondary they were quieter than the figures beneath them. */
+  font-weight: 700;
+  color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   cursor: pointer;
@@ -565,7 +579,7 @@ h2 { font-size: var(--fs-md); }
 .col-name { left: 32px; width: 210px; border-right: 1px solid var(--border-strong); }
 .matrix thead .col-name, .matrix thead .col-sl { z-index: 6; }
 
-.member-name { font-weight: 500; }
+.member-name { font-weight: 600; }
 .member-code {
   font-size: var(--fs-xs);
   color: var(--text-muted);
@@ -697,6 +711,82 @@ h2 { font-size: var(--fs-md); }
 .tooltip-row { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .tooltip-row b { color: var(--text-primary); }
 
+/* ---------- Column filters ---------- */
+/* One appearance for all four tables that carry them — the status matrix, the drill-down
+   list, and the two tables on the Users page. js/filters.js builds the row; everything
+   about how it looks is here, so a filter row never reads as belonging to one table.
+
+   The controls sit in the header block rather than in a toolbar above it, because a
+   filter's meaning is "this column" and putting it anywhere else forces the user to
+   count across to work out which is which. */
+
+/* `tr.filter-row th`, not `.filter-row th`: css/app.css is linked after this file and
+   its `.usertable th { padding: 9px 10px }` matches with equal specificity, so on the
+   Users page the filter row would take the header's own padding and sit too tall. */
+tr.filter-row th {
+  padding: 5px 6px 7px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-strong);
+  vertical-align: middle;
+}
+
+.filter-input {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 7px;
+  /* Every one of these resets an inherited header style. The filter cell now carries its
+     column's own classes (see js/filters.js), which is what keeps the frozen columns
+     frozen and the width caps honest — but those classes also bring uppercase, letter
+     spacing and, in the Student ID column, a monospace face. */
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  text-align: left;
+  color: var(--text-primary);
+  background: var(--page);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  transition: border-color 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.filter-input::placeholder { color: var(--text-muted); font-weight: 400; }
+
+.filter-input:hover { border-color: var(--accent); }
+.filter-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* A filter that is doing something looks like it: without this a narrowed table and an
+   untouched one are the same picture, and a stale filter reads as missing data.
+   The class is set by js/filters.js rather than by an attribute selector — a typed
+   value never updates the `value` attribute, so [value=""] would always match. */
+.filter-input.is-set {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-1));
+  font-weight: 600;
+}
+/* A select is left to its own intrinsic width — that is the widest option, which is the
+   widest value in the column, so it sizes to the data exactly as the cells below do.
+   max-width keeps one very long option from widening the column past its own cells. */
+.filter-select { cursor: pointer; max-width: 100%; }
+/* Columns that hold prose want a usable filter box even though the text inputs are
+   size=1; without a floor they collapse to a few pixels in a narrow column. */
+.dt-name .filter-input, .dt-college .filter-input, .dt-city .filter-input { min-width: 90px; }
+
+/* The count columns take a numeric floor. The spinner arrows would eat most of a narrow
+   column, and the value is typed rather than stepped. */
+.filter-input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+.filter-input[type="number"]::-webkit-outer-spin-button,
+.filter-input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.filter-input[type="search"]::-webkit-search-cancel-button { cursor: pointer; }
+
+/* The status matrix deliberately has NO filter row — see renderMatrix. Team and the
+   member search live in the topbar instead, and the drill-down list behind a number
+   carries the per-column filters. */
+
 /* ---------- Student drill-down ---------- */
 
 /* Only non-zero cells carry data-col, so only they light up as reachable. The ring is
@@ -713,7 +803,10 @@ h2 { font-size: var(--fs-md); }
 .drillpop {
   position: fixed;
   z-index: 95;
-  width: 460px;
+  /* Was 460px. The type scale went up a step and the Grand Total preview carries a
+     fifth column (the handler), so the four-column case would otherwise start wrapping
+     names that used to sit on one line. */
+  width: 545px;
   max-width: calc(100vw - 16px);
   background: var(--surface-1);
   color: var(--text-primary);
@@ -737,7 +830,20 @@ h2 { font-size: var(--fs-md); }
 .drillpop-title { font-size: var(--fs-sm); font-weight: 600; }
 .drillpop-meta { font-size: var(--fs-xs); color: var(--text-muted); text-align: right; }
 
-.drillpop-body { max-height: 272px; overflow: auto; }
+.drillpop-body { max-height: 300px; overflow: auto; }
+
+/* The preview fits its width instead of scrolling inside it.
+ *
+ * The dialog's table takes `width: max-content` and scrolls, because there it has the
+ * room and the columns are worth reading at full width. A 545px popover has neither: at
+ * max-content the fifth column (the handler, on the Grand Total row) was simply cut off
+ * at the panel edge, and a horizontal scrollbar inside a hover preview is not something
+ * anyone is going to reach for. So it wraps to fit — the two columns that hold names are
+ * allowed to take a second line, which costs a little height and loses nothing. */
+.drillpop .drill-table { width: 100%; }
+.drillpop .drill-table td.dt-handler,
+.drillpop .drill-table td.dt-name { white-space: normal; overflow-wrap: anywhere; }
+.drillpop .dt-name { min-width: 0; }
 
 .drillpop-foot {
   padding: 6px 12px 7px;
@@ -747,21 +853,35 @@ h2 { font-size: var(--fs-md); }
 }
 .drillpop-foot:empty { display: none; }
 
-/* Four columns, each only as wide as its content needs: a serial number, the short
-   student code, the name (the one column that wants room) and the exact status. */
+/* EVERY COLUMN AS WIDE AS ITS OWN DATA.
+ *
+ * `table-layout: auto`, not fixed. Fixed layout divides the width by the declared
+ * widths, so a Sr. No column got the same 34px whether it held "3" or "128" while
+ * "SHARADCHANDRA PAWAR COLLEGE OF ENGINEERING" was wrapped into a five-line stack —
+ * the browser was sizing to the declaration instead of to what was in the cell.
+ * Auto layout measures the content and gives each column what it needs.
+ *
+ * The two rules that keep auto layout honest:
+ *   nowrap by default   so a short value is never wrapped to save space the table has
+ *   max-width on prose  so one very long college name cannot take the whole table
+ *
+ * `width: max-content` on the scrolling variant below is what lets the sum of those
+ * natural widths exceed the dialog and scroll, rather than being compressed back.
+ */
 .drill-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  table-layout: fixed;
+  table-layout: auto;
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
 }
 
 .drill-table th, .drill-table td {
-  padding: 5px 8px;
+  padding: 6px 10px;
   text-align: left;
   vertical-align: top;
+  white-space: nowrap;
   border-bottom: 1px solid var(--grid);
 }
 .drill-table tbody tr:last-child td { border-bottom: none; }
@@ -769,24 +889,49 @@ h2 { font-size: var(--fs-md); }
 .drill-table thead th {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   background: var(--surface-1);
   border-bottom: 1px solid var(--border-strong);
   font-size: var(--fs-micro);
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-muted);
+  color: var(--text-primary);
 }
 
-/* table-layout is fixed, so a container narrower than these widths would squeeze the
-   name column to nothing rather than scrolling. min-width makes it scroll instead. */
-.drill-table { min-width: 380px; }
+/* The columns that hold prose rather than a value: allowed to wrap, and capped so one
+   outlier cannot push everything else off the screen.
+   `.drill-table td.dt-name`, not `.dt-name`. The nowrap default above is `.drill-table
+   td` at specificity (0,1,1); a bare `.dt-name` is (0,1,0) and loses to it, so the cap
+   applied but the text kept its nowrap and spilled straight across the next column —
+   "…Government Medical College" printed on top of the city beside it. */
+.drill-table td.dt-name,
+.drill-table td.dt-college,
+.drill-table td.dt-city {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.dt-name    { min-width: 148px; max-width: 260px; font-weight: 600; }
+.dt-college { min-width: 170px; max-width: 320px; }
+.dt-city    { max-width: 190px; }
 
-.dt-sr { width: 34px; text-align: right; padding-right: 6px; color: var(--text-muted); }
-.dt-id { width: 62px; }
-.dt-name { overflow-wrap: anywhere; }
-.dt-status { width: 148px; }
+/* Statuses stay on one line in the dialog, where the column can simply be as wide as
+   the longest value. The preview has no such room, so there they wrap — at the
+   underscores, where js/students.js puts a <wbr>. */
+.drillpop .drill-table td.dt-status { white-space: normal; }
+
+.dt-sr { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.dt-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-xs); }
+
+/* The handler's login code under their name — the same pairing the matrix uses for a
+   member row, so "Mrs. Manisha Jain / mj" reads the same in both places. */
+.dt-sub {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 
 /* Statuses are printed exactly as the database holds them — never renamed or merged —
    so the tag has to wrap a 23-character value like REAPPLICATION_SUBMITTED. It breaks
@@ -829,13 +974,16 @@ h2 { font-size: var(--fs-md); }
 /* `dialog.dialog-wide`, not `.dialog-wide`: css/app.css is linked after this file and
    its `.dialog { width: min(400px, …) }` would otherwise win on source order alone and
    squeeze the student list into a 400px column. */
-dialog.dialog-wide { width: min(760px, calc(100vw - 32px)); }
+dialog.dialog-wide { width: min(1080px, calc(100vw - 32px)); }
 
 #drillDialog .dialog-head, #studentDialog .dialog-head {
   align-items: flex-start;
   padding: 22px 24px 14px;
 }
 #drillDialog .field-year, #studentDialog .field-year { margin-left: auto; }
+/* Maximise sits beside Close, so the year select's margin-left:auto pushes the pair
+   together at the right rather than stranding one of them mid-header. */
+#drillMax { margin-left: 4px; }
 
 .drill-scroll {
   max-height: min(58vh, 440px);
@@ -845,22 +993,128 @@ dialog.dialog-wide { width: min(760px, calc(100vw - 32px)); }
   border-radius: var(--radius-sm);
 }
 
-/* Roomier than the hover preview: the extra width goes to the ID and status columns,
-   which are the ones clipped hardest in the popover. */
-.drill-scroll .drill-table { min-width: 470px; }
-.drill-scroll .dt-sr { width: 44px; }
-.drill-scroll .dt-id { width: 90px; }
-.drill-scroll .dt-status { width: 200px; }
+/* The list carries far more columns than fit a dialog, which is what the maximise
+   control is for. max-content lets every column take its natural width and the box
+   scroll; min-width:100% stops a three-column result from sitting in a narrow strip
+   with empty space beside it. */
+.drill-scroll .drill-table {
+  width: max-content;
+  min-width: 100%;
+}
 
 .drill-foot {
   margin: 10px 24px 22px;
   font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+/* ---------- Maximised list ----------
+ *
+ * A class, not the Fullscreen API: the list is inside a <dialog> that is already in the
+ * top layer, where requesting real fullscreen behaves differently across browsers and
+ * would drop the page's own theming. This simply grows the dialog to the viewport.
+ *
+ * `[open]` is load-bearing. The class persists after the dialog closes (the size is a
+ * reading preference, not a property of one cell), and without the attribute selector
+ * `display: flex` would override the UA's `dialog:not([open]) { display: none }` and
+ * leave a closed dialog painted across the page.
+ */
+dialog.dialog-wide.is-max[open] {
+  width: calc(100vw - 20px);
+  max-width: none;
+  height: calc(100vh - 20px);
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+}
+/* The scroll box takes the leftover height instead of a fixed 440px, so maximising
+   actually shows more rows rather than only more empty dialog. */
+.dialog-wide.is-max[open] .drill-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+.dialog-wide.is-max[open] .dialog-head,
+.dialog-wide.is-max[open] .drill-foot { flex: 0 0 auto; }
+
+/* ---------- The student's two cards ---------- */
+
+/* Wider than the old money-only dialog: card 1 carries eleven labelled facts, and at
+   500px they stacked into a single column two screens tall. */
+#studentDialog { width: min(760px, calc(100vw - 32px)); }
+#studentBody {
+  padding: 2px 24px 24px;
+  max-height: min(74vh, 680px);
+  overflow: auto;
+}
+.student-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.stu-card {
+  padding: 14px 16px 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  box-shadow: var(--shadow);
+}
+.stu-card:last-child { margin-bottom: 0; }
+
+/* The card's own heading. Bold and letterspaced rather than large: it labels a block of
+   facts, and at --fs-md it competed with the student's name in the dialog header. */
+.stu-card-title {
+  margin: 0 0 12px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary);
+}
+
+.stu-card-note {
+  margin: -4px 0 12px;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
-#studentDialog { width: min(500px, calc(100vw - 32px)); }
-#studentBody { padding: 2px 24px 24px; }
-.student-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* auto-fit rather than a fixed column count: eleven facts read as three columns on a
+   desktop dialog and one on a phone, without a breakpoint for each. */
+.fact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px 20px;
+  margin: 0;
+}
+.fact { min-width: 0; }
+
+.fact-label {
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.fact-value {
+  margin: 3px 0 0;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+/* An unanswered field is muted and light, so a card of real answers cannot be misread
+   as a card of dashes at a glance. */
+.fact-value.is-blank { color: var(--text-muted); font-weight: 500; }
+
+/* The specific community under the reported Jain / Non-Jain group. */
+.fact-note {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+}
 
 .stu-status {
   display: flex;
@@ -1195,7 +1449,10 @@ dialog.dialog-wide { width: min(760px, calc(100vw - 32px)); }
 }
 
 @media print {
-  .topbar-controls, .tooltip, .drillpop, .sidebar, .loadbar { display: none; }
+  /* .filter-row too: the controls are a way to narrow the table, not part of it, and on
+     paper they print as a row of empty boxes under the headings. The rows they have
+     already hidden stay hidden, so what prints is what was on screen. */
+  .topbar-controls, .tooltip, .drillpop, .sidebar, .loadbar, .filter-row { display: none; }
   #appShell { grid-template-columns: minmax(0, 1fr); }
   .panel { break-inside: avoid; box-shadow: none; }
   .table-scroll { max-height: none; overflow: visible; box-shadow: none; }

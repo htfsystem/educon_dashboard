@@ -533,6 +533,13 @@
     // those must not re-flash figures that have not moved again.
     state.changed = new Set();
 
+    /* NO FILTER ROW ON THIS TABLE — removed 2026-08-28 at the user's request, and not to
+     * be reintroduced. A row of "min" boxes under every status heading was noise against
+     * a grid whose whole job is to be read at a glance, and the two filters that matter
+     * here already sit in the topbar: Team, and the member search. The drill-down list
+     * behind a number keeps its own filters, which is where filtering was actually asked
+     * for — see js/students.js. */
+
     // The header wraps to a variable number of lines, so its height is measured rather
     // than assumed — .section-row sticks to --head-h, immediately under the locked header.
     const headRow = el.table.querySelector('thead tr');

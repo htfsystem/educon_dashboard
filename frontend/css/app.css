@@ -430,9 +430,11 @@ body[data-page="users"] .topbar-controls { display: none; }
 /* ============================================================ USERS ========= */
 
 .usertable { width: 100%; border-collapse: collapse; font-size: var(--fs-base); }
+/* 700 in primary ink, matching the status matrix — these were --text-muted at 600, a
+   shade quieter than the rows they head. */
 .usertable th {
   text-align: left; font-size: var(--fs-micro); letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--text-muted); font-weight: 600;
+  color: var(--text-primary); font-weight: 700;
   border-bottom: 1px solid var(--border-strong); padding: 9px 10px; white-space: nowrap;
 }
 .usertable td { padding: 10px; border-bottom: 1px solid var(--border); color: var(--text-primary); }

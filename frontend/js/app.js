@@ -563,6 +563,20 @@
           </div></td>
         </tr>`).join('')}</tbody>`;
 
+    // Column filters, same module the matrix and the drill-down list use. Role and
+    // Status are the categorical pair here, so they get a picker; the rest take text.
+    // Re-mounted on every render, and whatever was typed survives an edit or a delete.
+    window.EduConFilters.mount($('userTable'), {
+      id: 'dashboardUsers',
+      columns: [
+        { index: 0, type: 'text', label: 'Username' },
+        { index: 1, type: 'text', label: 'Full name' },
+        { index: 2, type: 'select', label: 'Role' },
+        { index: 3, type: 'select', label: 'Status' },
+        { index: 4, type: 'text', label: 'Created' }
+      ]
+    });
+
     const byId = id => users.find(u => u.id === Number(id));
 
     $('userTable').querySelectorAll('[data-edit]').forEach(b =>
@@ -608,6 +622,16 @@
             : '<span class="state-off"><i class="state-dot"></i>Rejected</span>'}</td>
           <td>${esc(h.ip || '—')}</td>
         </tr>`).join('')}</tbody>`;
+
+    window.EduConFilters.mount($('loginTable'), {
+      id: 'loginHistory',
+      columns: [
+        { index: 0, type: 'text', label: 'When' },
+        { index: 1, type: 'text', label: 'Username' },
+        { index: 2, type: 'select', label: 'Result' },
+        { index: 3, type: 'text', label: 'From' }
+      ]
+    });
   }
 
   let editingId = null;
