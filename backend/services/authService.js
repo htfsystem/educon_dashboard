@@ -239,12 +239,19 @@ function readToken(token) {
 
 // ---------- express middleware ----------
 
-// AUTH_DISABLED turns the login screen off entirely: every request arrives as this
-// synthetic administrator, so /api/auth/me always succeeds and the frontend goes
-// straight to the dashboard. It is a temporary switch — the accounts, the hashes and
-// every permission check below are untouched, so clearing the flag restores sign-in
-// exactly as it was. Never set it on a deployment reachable from the internet.
-const AUTH_DISABLED = String(process.env.AUTH_DISABLED || '').toLowerCase() === 'true';
+// The login screen is OFF by default, here and on Render alike: every request arrives
+// as this synthetic administrator, so /api/auth/me always succeeds and the frontend
+// goes straight to the dashboard.
+//
+// The default is deliberately "no sign-in" rather than "sign-in unless disabled",
+// because a host that never receives the .env file (Render does not) would otherwise
+// silently bring the login page back — which is exactly what happened on 2026-08-28.
+// Turning it on is now an explicit act on every host: set AUTH_ENABLED=true.
+//
+// Nothing below is deleted — accounts, bcrypt hashes, sessions and every
+// requirePermission check are intact, so flipping the flag restores sign-in as it was.
+// Note this leaves a public deployment fully open, finance figures included.
+const AUTH_DISABLED = String(process.env.AUTH_ENABLED || '').toLowerCase() !== 'true';
 
 const OPEN_ACCESS_USER = {
   id: 0,
