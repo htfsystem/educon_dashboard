@@ -36,10 +36,31 @@
   --seq-5: #256abf;
   --seq-6: #184f95;
 
-  --radius: 10px;
+  /* Radii, as one ladder. Every rounded thing picks a rung — previously five values
+     were hard-coded past the two tokens (hero 22, login 18, dialog 16, heat cell 3),
+     so nothing shared a corner with anything else. */
+  --radius-xs: 4px;
   --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-pill: 999px;
+
+  /* Type scale, ~1.15 between steps. Sizes are only ever picked from this ladder. */
+  --fs-micro: 10.5px;   /* uppercase eyebrows, table headers */
+  --fs-xs: 11.5px;      /* chips, hints, captions */
+  --fs-sm: 12.5px;      /* table body, secondary UI */
+  --fs-base: 14px;      /* body */
+  --fs-md: 15px;        /* panel headings */
+  --fs-lg: 17px;        /* page + dialog titles */
+  --fs-xl: 20px;        /* figures */
+  --fs-2xl: 28px;       /* headline figures */
+
   --shadow: 0 1px 2px rgba(11, 11, 11, 0.04), 0 4px 12px rgba(11, 11, 11, 0.04);
   --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* One curve for every state change, so hover, press and open feel like one system. */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -111,14 +132,69 @@ body {
   background: var(--page);
   color: var(--text-primary);
   font-family: var(--font);
-  font-size: 14px;
+  font-size: var(--fs-base);
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
 }
 
 h1, h2 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
-h1 { font-size: 17px; }
-h2 { font-size: 15px; }
+h1 { font-size: var(--fs-lg); }
+h2 { font-size: var(--fs-md); }
+
+/* ---------- Icons ---------- */
+
+/* The one icon system. Every <symbol> in the sprite is drawn as open paths on a 24
+   grid and gets its fill, stroke and weight from here, so a nav icon, a menu icon
+   and a close button are the same drawing weight at any size. currentColor means an
+   icon needs no state rules of its own — it follows the control's text colour. */
+.ico {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- Press feedback ---------- */
+
+/* Every control gives under the pointer. Transform only — it is composited, so this
+   costs nothing, and it is what separates an interface that feels physical from one
+   that only looks right in a screenshot. */
+.btn, .chip-toggle, .mini, .navlink, .usermenu-item, .usermenu-trigger,
+.sidebar-toggle, .dialog-close, .segmented-btn, .login-btn {
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease),
+              color 0.16s var(--ease), transform 0.12s var(--ease);
+}
+
+.btn:active, .chip-toggle:active, .mini:active, .navlink:active,
+.usermenu-item:active, .usermenu-trigger:active, .sidebar-toggle:active,
+.dialog-close:active, .segmented-btn:active {
+  transform: scale(0.97);
+}
+
+/* A full-width button scaling in from both edges reads as a wobble; it presses down. */
+.login-btn:active:not(:disabled) { transform: translateY(1px); }
+
+/* A matrix cell has no border to push, so it takes the press on its numeral. */
+.matrix td.is-drill:active .cell-v { transform: scale(0.94); }
+.cell-v { transition: transform 0.12s var(--ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn, .chip-toggle, .mini, .navlink, .usermenu-item, .usermenu-trigger,
+  .sidebar-toggle, .dialog-close, .segmented-btn, .login-btn, .cell-v {
+    transition: none;
+  }
+  .btn:active, .chip-toggle:active, .mini:active, .navlink:active,
+  .usermenu-item:active, .usermenu-trigger:active, .sidebar-toggle:active,
+  .dialog-close:active, .segmented-btn:active, .login-btn:active:not(:disabled),
+  .matrix td.is-drill:active .cell-v {
+    transform: none;
+  }
+}
 
 /* ---------- Top bar ---------- */
 
@@ -143,7 +219,7 @@ h2 { font-size: 15px; }
 .field-grow { flex: 1 1 200px; max-width: 300px; }
 
 .field-label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -152,7 +228,7 @@ h2 { font-size: 15px; }
 
 .select, .input {
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-primary);
   background: var(--surface-1);
   border: 1px solid var(--border-strong);
@@ -171,7 +247,7 @@ h2 { font-size: 15px; }
 
 .btn {
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: 500;
   color: var(--text-primary);
   background: var(--surface-1);
@@ -226,7 +302,7 @@ h2 { font-size: 15px; }
   margin-bottom: 14px;
 }
 
-.panel-sub { margin: 3px 0 0; font-size: 12px; color: var(--text-muted); }
+.panel-sub { margin: 3px 0 0; font-size: var(--fs-sm); color: var(--text-muted); }
 /* An error-only subtitle takes no space until it has something to say. */
 .panel-sub:empty { display: none; }
 
@@ -274,7 +350,7 @@ h2 { font-size: 15px; }
 }
 
 .kpi-label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -282,14 +358,14 @@ h2 { font-size: 15px; }
 }
 
 .kpi-value {
-  font-size: 28px;
+  font-size: var(--fs-2xl);
   font-weight: 600;
   letter-spacing: -0.02em;
   margin-top: 4px;
   line-height: 1.1;
 }
 
-.kpi-meta { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
+.kpi-meta { font-size: var(--fs-sm); color: var(--text-secondary); margin-top: 3px; }
 
 /* ---------- Chips & legends ---------- */
 
@@ -300,12 +376,12 @@ h2 { font-size: 15px; }
   align-items: center;
   gap: 6px;
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 3px 10px;
   cursor: default;
 }
@@ -329,9 +405,9 @@ h2 { font-size: 15px; }
 .chart { width: 100%; min-height: 40px; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
 
-.tick-text { font-size: 11px; fill: var(--text-muted); }
-.label-text { font-size: 12px; fill: var(--text-secondary); }
-.value-text { font-size: 12px; fill: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+.tick-text { font-size: var(--fs-xs); fill: var(--text-muted); }
+.label-text { font-size: var(--fs-sm); fill: var(--text-secondary); }
+.value-text { font-size: var(--fs-sm); fill: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
 .gridline { stroke: var(--grid); stroke-width: 1; }
 .baseline { stroke: var(--axis); stroke-width: 1; }
 
@@ -359,14 +435,16 @@ h2 { font-size: 15px; }
   border-spacing: 0;
   width: 100%;
   table-layout: fixed;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
 }
 
 /* Every cell carries a right + bottom rule, so the matrix reads as a true grid
    both on screen and in the exports. Numerals are centred in their column. */
+/* 4px of horizontal padding let adjacent figures very nearly touch the column rule;
+   7px gives each number its own air without widening the grid enough to scroll. */
 .matrix th, .matrix td {
-  padding: 7px 4px;
+  padding: 7px 7px;
   text-align: center;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -385,7 +463,7 @@ h2 { font-size: 15px; }
   background: var(--surface-1);
   box-shadow: 0 1px 0 var(--border-strong);
   border-bottom: 1px solid var(--border-strong);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -395,7 +473,18 @@ h2 { font-size: 15px; }
 }
 
 .matrix thead th:hover { background: var(--wash); }
-.matrix thead th .sort-arrow { color: var(--series-1); margin-left: 3px; }
+
+/* One caret, flipped for descending, so the two directions are the identical shape
+   and the header text does not shift when the sort is reversed. */
+.matrix thead th .sort-arrow {
+  color: var(--series-1);
+  width: 13px; height: 13px;
+  display: inline-block;
+  vertical-align: -2px;
+  margin-left: 2px;
+  stroke-width: 2.4;   /* holds up at 13px, where 1.5 goes faint */
+}
+.matrix thead th .sort-arrow.is-desc { transform: rotate(180deg); }
 
 .col-name, .col-sl {
   text-align: left;
@@ -409,7 +498,7 @@ h2 { font-size: 15px; }
 
 .member-name { font-weight: 500; }
 .member-code {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   margin-left: 6px;
   font-variant-numeric: normal;
@@ -429,7 +518,7 @@ h2 { font-size: 15px; }
   display: inline-block;
   min-width: 26px;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   color: var(--text-primary);
 }
 
@@ -447,7 +536,7 @@ h2 { font-size: 15px; }
    renderMatrix), so you always know whether the row you are reading is ETM or ATM. */
 .section-row td {
   background: var(--wash);
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -482,11 +571,11 @@ h2 { font-size: 15px; }
 }
 
 .rec-item { min-width: 0; }
-.rec-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.rec-value { font-size: 20px; font-weight: 600; margin-top: 2px; }
-.rec-note { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
+.rec-label { font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.rec-value { font-size: var(--fs-xl); font-weight: 600; margin-top: 2px; }
+.rec-note { font-size: var(--fs-sm); color: var(--text-secondary); margin-top: 3px; }
 
-.rec-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
+.rec-check { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-sm); font-weight: 600; }
 .rec-ok { color: var(--good-text); }
 .rec-bad { color: var(--critical); }
 
@@ -504,7 +593,7 @@ h2 { font-size: 15px; }
   border-radius: var(--radius-sm);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
   padding: 8px 11px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   max-width: 260px;
 }
 .tooltip[data-show="1"] { opacity: 1; }
@@ -549,15 +638,15 @@ h2 { font-size: 15px; }
   padding: 8px 12px 7px;
   border-bottom: 1px solid var(--border);
 }
-.drillpop-title { font-size: 12.5px; font-weight: 600; }
-.drillpop-meta { font-size: 11px; color: var(--text-muted); text-align: right; }
+.drillpop-title { font-size: var(--fs-sm); font-weight: 600; }
+.drillpop-meta { font-size: var(--fs-xs); color: var(--text-muted); text-align: right; }
 
 .drillpop-body { max-height: 272px; overflow: auto; }
 
 .drillpop-foot {
   padding: 6px 12px 7px;
   border-top: 1px solid var(--border);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 .drillpop-foot:empty { display: none; }
@@ -569,7 +658,7 @@ h2 { font-size: 15px; }
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -587,7 +676,7 @@ h2 { font-size: 15px; }
   z-index: 1;
   background: var(--surface-1);
   border-bottom: 1px solid var(--border-strong);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -607,13 +696,15 @@ h2 { font-size: 15px; }
    so the tag has to wrap a 23-character value like REAPPLICATION_SUBMITTED. It breaks
    at the underscores (js/students.js inserts <wbr> there); anywhere is the last resort
    for a column too narrow even for that. */
+/* 10px was below the practical floor for a letterspaced uppercase string; --fs-micro
+   is the same size the table headers use, which is the smallest text on the page. */
 .status-tag {
   display: inline-block;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: var(--wash);
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   line-height: 1.35;
   letter-spacing: 0.02em;
@@ -630,7 +721,7 @@ h2 { font-size: 15px; }
 .drill-empty {
   margin: 0;
   padding: 16px 12px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   text-align: center;
 }
@@ -667,7 +758,7 @@ dialog.dialog-wide { width: min(760px, calc(100vw - 32px)); }
 
 .drill-foot {
   margin: 10px 24px 22px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
@@ -680,7 +771,7 @@ dialog.dialog-wide { width: min(760px, calc(100vw - 32px)); }
   align-items: center;
   gap: 8px;
   margin: 0 0 14px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -714,7 +805,7 @@ dialog.dialog-wide { width: min(760px, calc(100vw - 32px)); }
 .stu-fig-label {
   display: block;
   min-height: 2.6em;
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   line-height: 1.3;
   text-transform: uppercase;
@@ -724,7 +815,7 @@ dialog.dialog-wide { width: min(760px, calc(100vw - 32px)); }
 .stu-fig-value {
   display: block;
   margin-top: 3px;
-  font-size: 19px;
+  font-size: var(--fs-xl);
   font-weight: 650;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;

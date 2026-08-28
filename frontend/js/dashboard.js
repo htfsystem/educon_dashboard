@@ -311,8 +311,11 @@
     const rows = visibleMembers();
     const max = Math.max(...rows.flatMap(m => COLUMNS.map(c => colValue(c, m.statuses))), 1);
 
+    // One caret symbol, rotated for descending — ▲ and ▼ are different sizes in most
+    // system fonts, so the header visibly shifted when the sort direction flipped.
     const arrow = k => state.sortKey === k
-      ? `<span class="sort-arrow">${state.sortDir === 1 ? '▲' : '▼'}</span>` : '';
+      ? `<svg class="ico sort-arrow${state.sortDir === 1 ? '' : ' is-desc'}" viewBox="0 0 24 24"` +
+        ` aria-hidden="true"><use href="#icoCaret"/></svg>` : '';
 
     const head = `<thead><tr>
       <th class="col-sl">#</th>
