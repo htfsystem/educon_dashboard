@@ -411,53 +411,16 @@ body[data-page="users"] .topbar-controls { display: none; }
 /* An element the role cannot use is removed, not merely disabled. */
 [data-perm-denied] { display: none !important; }
 
-/* ============================================ PAGE 1 · PAGE HEADER ========== */
-
-/* This was a full-bleed navy panel with a rotating conic-gradient glow behind one
-   sentence. It is now a page header on the page's own background: left-aligned, the
-   figure carried by weight and size rather than by a coloured box, and no perpetual
-   animation above a table of financial counts. */
-.pagehead {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-bottom: 22px;
-  border-bottom: 1px solid var(--border);
-}
-
-.pagehead-top {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 14px; flex-wrap: wrap;
-}
+/* ================================================ PAGE 1 · SHARED BITS ====== */
 
 .eyebrow {
+  display: block;
   font-size: var(--fs-micro); letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--text-muted); font-weight: 600;
 }
 
-.hero-live {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: var(--fs-sm); color: var(--text-muted);
-}
-/* A steady dot, not a pulsing one. It reports a connection state that does not change
-   from moment to moment, and it sits directly above the figures. */
-.live-dot {
-  width: 7px; height: 7px; border-radius: 50%; flex: none;
-  background: var(--good);
-}
-
-/* Weight and colour carry the hierarchy here, not scale — the old 32px headline over
-   a saturated ground shouted for attention the page did not need drawn. */
-.pagehead-h {
-  font-size: clamp(20px, 2vw, 26px); font-weight: 650; line-height: 1.2;
-  letter-spacing: -0.02em; margin: 0; max-width: 30ch; text-wrap: balance;
-  color: var(--text-primary);
-}
-/* The disbursed figure is the one number worth colouring. */
-.pagehead-h em { font-style: normal; color: var(--good-text); }
-
-.hero-sub { color: var(--text-secondary); font-size: var(--fs-base); line-height: 1.5; max-width: 78ch; margin: 0; }
-/* An error-only subtitle takes no space until it has something to say. */
+.hero-sub { color: var(--critical); font-size: var(--fs-sm); line-height: 1.5; max-width: 78ch; margin: 10px 0 0; }
+/* An error-only surface takes no space until it has something to say. */
 .hero-sub:empty { display: none; }
 
 @media (prefers-reduced-motion: reduce) {

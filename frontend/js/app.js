@@ -436,19 +436,17 @@
     page.setAttribute('aria-busy', 'true');
     window.EduConBusy.push();
 
-    // The previous year's figures must not sit under the new year's label while
-    // the request is in flight — that reads as live data and is not. A skeleton at
-    // the headline's own height says "a number is coming" without reserving the
-    // wrong amount of space or letting a stale figure stand.
-    $('heroLive').textContent = `Loading · ${state.year}`;
+    // A skeleton at the line's own height says "a number is coming" without
+    // reserving the wrong amount of space or letting a stale figure stand. The big
+    // figure itself is left alone: it animates from the old value to the new one, and
+    // blanking it first would throw away the starting point of that movement.
     $('heroHeadline').innerHTML =
-      '<span class="skeleton sk-line-lg" style="display:block;width:min(32ch,100%)"></span>';
+      '<span class="skeleton sk-line" style="display:block;width:min(28ch,100%)"></span>';
 
     try {
       state.overview = await api(`/api/overview?year=${encodeURIComponent(state.year)}`);
       renderOverview();
     } catch (error) {
-      $('heroLive').textContent = 'Not connected';
       $('heroHeadline').textContent = 'Could not load the pipeline';
       $('heroSub').textContent = error.message;
     } finally {
@@ -456,6 +454,18 @@
       window.EduConBusy.pop();
     }
   }
+
+  // The colour each column takes in the stacked pipeline bar and its key. Same
+  // variables the distribution chart uses, so a column is one colour on this page.
+  const SEG_VAR = {
+    CREATED: '--seq-2',
+    SCRUTINY_PENDING: '--seq-3',
+    APPROVAL_PENDING: '--seq-4',
+    SANCTION_PENDING: '--seq-5',
+    DISBURSEMENT_PENDING: '--seq-6',
+    STUDENT_DISBURSED: '--good',
+    NO_REQUIREMENT_THIS_YEAR: '--text-muted'
+  };
 
   function renderOverview() {
     const o = state.overview;
@@ -470,19 +480,46 @@
     const tracked = window.trackedFrom(o.assignedStatusTotals);
     const disbursed = window.colValue(disbursedCol, o.assignedStatusTotals);
 
-    $('heroLive').textContent = `Live · educon_prod · ${o.academicYear}`;
-    $('heroHeadline').innerHTML =
-      `${n(tracked)} students tracked, <em>${n(disbursed)} disbursed</em> so far.`;
-    // No standing explanation under the hero — the headline carries the figure and
-    // this node is left as an error surface only (see the catch blocks above).
+    // The figure travels from whatever was on screen to the new one. On a refresh that
+    // movement is the point: you see the pipeline move without reading two numbers.
+    window.EduConMotion.count($('statTracked'), tracked);
+
+    $('heroHeadline').innerHTML = tracked
+      ? `<em>${n(disbursed)} disbursed</em> so far — ${
+          Math.round((disbursed / tracked) * 100)}% of everyone tracked this year.`
+      : 'No students tracked in this academic year.';
+
+    // ---- the pipeline as one bar ----
+    const segs = window.PIPELINE_COLUMNS
+      .map(c => ({ c, v: window.colValue(c, o.assignedStatusTotals) }))
+      .filter(s => s.v > 0);
+
+    // flex-grow carries the proportion, so the bar re-proportions with a transition
+    // when the year changes instead of being torn down and rebuilt.
+    $('pipeBar').innerHTML = segs.map((s, i) =>
+      `<span style="flex-grow:${s.v};--seg:var(${SEG_VAR[s.c.key]});--i:${i}"
+             title="${esc(s.c.label)}: ${n(s.v)}"></span>`).join('');
+
+    $('pipeKey').innerHTML = segs.map(s =>
+      `<span class="pipekey-item"><i class="pipekey-dot" style="--seg:var(${SEG_VAR[s.c.key]})"></i>` +
+      `${esc(s.c.label)} <b class="pipekey-n">${n(s.v)}</b></span>`).join('');
+
+    // No standing explanation here — this node is an error surface only (see the
+    // catch blocks above).
     $('heroSub').textContent = '';
   }
+
+  // The dashboard auto-refreshes on a fixed cadence; both the overview and the
+  // matrix use it, so the two can never show figures from different moments.
+  const REFRESH_MS = 120000;
+
+  window.EduConMotion.spotlight(document.querySelector('.bento'));
 
   // The matrix auto-refreshes every two minutes; the hero is refreshed on the
   // same cadence so the two can never show figures from different moments.
   const heroIsLive = () => state.page === 'dashboard' && state.user && !document.hidden;
 
-  setInterval(() => { if (heroIsLive()) loadOverview(); }, 120000);
+  setInterval(() => { if (heroIsLive()) loadOverview(); }, REFRESH_MS);
 
   // The interval deliberately skips while the tab is hidden, so coming back could
   // otherwise leave up to two minutes of stale figures on screen. Refreshing on the

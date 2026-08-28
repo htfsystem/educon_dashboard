@@ -47,6 +47,9 @@
     sortDir: -1,
     heatmap: true,
     hideEmpty: false,
+    // Cell keys whose figure moved in the most recent sync. Consumed and cleared by
+    // the next renderMatrix, so a change flashes exactly once.
+    changed: new Set(),
     database: null      // from /api/health, stamped onto the exports
   };
 
@@ -103,6 +106,45 @@
         `<div class="sk-bar"><span class="skeleton sk-label"></span>` +
         `<span class="skeleton sk-track" style="flex:0 0 ${72 - i * 8}%"></span></div>`
       ).join('')}</div>`;
+  }
+
+  // ---------- Change detection ----------
+
+  /* What actually moved since the last sync.
+   *
+   * The matrix reloads every two minutes and nothing marked what changed — you had to
+   * have memorised the previous figure. This diffs the incoming report against the one
+   * it replaces and hands renderMatrix a set of cell keys to flash.
+   *
+   * It is computed in loadYear, not in renderMatrix, and cleared once consumed: sorting,
+   * filtering and searching all re-render the matrix, and flashing on those would be
+   * lying about what came from the database. */
+  const cellKey = (etmId, colKey) => `${etmId || '*'}|${colKey}`;
+
+  function diffReports(prev, next) {
+    const changed = new Set();
+    if (!prev) return changed;                     // first load marks nothing
+
+    const before = new Map(prev.members.map(m => [m.etmId, m]));
+    next.members.forEach(m => {
+      const was = before.get(m.etmId);
+      if (!was) return;                            // a member new to this year
+      COLUMNS.forEach(c => {
+        if (colValue(c, m.statuses) !== colValue(c, was.statuses)) {
+          changed.add(cellKey(m.etmId, c.key));
+        }
+      });
+      if (memberTotal(m) !== memberTotal(was)) changed.add(cellKey(m.etmId, '__TOTAL__'));
+    });
+
+    // The Grand Total row moves independently of any single member's row — a student
+    // reassigned between two handlers changes both member rows and neither total.
+    COLUMNS.forEach(c => {
+      if (colAssignedTotal(c, next) !== colAssignedTotal(c, prev)) changed.add(cellKey(null, c.key));
+    });
+    if (trackedTotal(next) !== trackedTotal(prev)) changed.add(cellKey(null, '__TOTAL__'));
+
+    return changed;
   }
 
   // ---------- Empty states ----------
@@ -226,7 +268,13 @@
     if (!state.report) { skeletonMatrix(); skeletonChart(); }
     setBusy(true);
     try {
-      state.report = await getJSON(`/api/report?year=${encodeURIComponent(state.year)}`);
+      const next = await getJSON(`/api/report?year=${encodeURIComponent(state.year)}`);
+      // Only diff within one academic year — switching years changes every figure on
+      // screen, and flashing all of them would say "the database moved" when it did not.
+      state.changed = next.academicYear === state.report?.academicYear
+        ? diffReports(state.report, next)
+        : new Set();
+      state.report = next;
       // Fresh cell figures must not sit next to a drill-down list cached from the
       // previous fetch — a two-minute-old list under a current number reads as a bug.
       window.EduConDrill.invalidate();
@@ -322,13 +370,16 @@
         class: 'label-text', x: padL - 10, y: y + rowH / 2 + 4, 'text-anchor': 'end'
       }, d.col.label));
 
+      // --i staggers the draw so the bars arrive in sequence, top to bottom, rather
+      // than all at once. The CSS resolves both to their finished state under
+      // prefers-reduced-motion, so the chart is complete either way.
       const bar = svgEl('path', {
-        class: 'bar', d: hBarPath(padL, y, w, rowH, 4), fill
+        class: 'bar bar-grow', d: hBarPath(padL, y, w, rowH, 4), fill, style: `--i:${i}`
       });
       svg.appendChild(bar);
 
       svg.appendChild(svgEl('text', {
-        class: 'value-text', x: padL + w + 8, y: y + rowH / 2 + 4
+        class: 'value-text value-in', x: padL + w + 8, y: y + rowH / 2 + 4, style: `--i:${i}`
       }, d.count));
 
       const hit = svgEl('rect', { class: 'hit', x: padL, y: y - gap / 2, width: plotW + padR, height: rowH + gap });
@@ -362,8 +413,14 @@
    * list behind a 0, and an empty popover reads as a failure rather than as an answer.
    * Omitting data-etm means the Grand Total row: every student a real person handles.
    */
+  /** A cell that fell to zero still moved — the zero branches skip drill(), so they
+   *  pick the flash class up here instead. */
+  const zeroFlash = (etmId, colKey) =>
+    state.changed.has(cellKey(etmId, colKey)) ? ' cell-changed' : '';
+
   const drill = (colKey, etmId, cls = '') =>
-    ` class="is-drill${cls ? ` ${cls}` : ''}" tabindex="0"` +
+    ` class="is-drill${cls ? ` ${cls}` : ''}${
+       state.changed.has(cellKey(etmId, colKey)) ? ' cell-changed' : ''}" tabindex="0"` +
     ` data-col="${colKey}" data-year="${escapeHtml(state.year)}"` +
     (etmId ? ` data-etm="${etmId}"` : '') +
     ' title="Show the students behind this number"';
@@ -434,17 +491,18 @@
 
       // data-who names the row for the drill-down's header, so the list can say whose
       // students it is showing without students.js having to re-read the matrix.
-      body += `<tr data-who="${escapeHtml(`${m.name} (${m.loginId})`)}">
+      const rowMoved = state.changed.has(cellKey(m.etmId, '__TOTAL__'));
+      body += `<tr class="${rowMoved ? 'row-changed' : ''}" data-who="${escapeHtml(`${m.name} (${m.loginId})`)}">
         <td class="col-sl">${sl}</td>
         <td class="col-name"><span class="member-name">${escapeHtml(m.name)}</span><span class="member-code">${escapeHtml(m.loginId)}</span></td>
         ${total
           ? `<td${drill('__TOTAL__', m.etmId, 'col-total')}>${total}</td>`
-          : '<td class="col-total cell-zero">0</td>'}
+          : `<td class="col-total cell-zero${zeroFlash(m.etmId, '__TOTAL__')}">0</td>`}
         ${COLUMNS.map(c => {
           const v = colValue(c, m.statuses);
           return v
             ? `<td${drill(c.key, m.etmId)}><span class="cell-v"${heatStyle(v, max)}>${v}</span></td>`
-            : '<td class="cell-zero">0</td>';
+            : `<td class="cell-zero${zeroFlash(m.etmId, c.key)}">0</td>`;
         }).join('')}
       </tr>`;
     });
@@ -459,15 +517,21 @@
         <td class="col-name">Grand Total</td>
         ${cohort
           ? `<td${drill('__TOTAL__', null, 'col-total')}>${cohort}</td>`
-          : '<td class="col-total cell-zero">0</td>'}
+          : `<td class="col-total cell-zero${zeroFlash(null, '__TOTAL__')}">0</td>`}
         ${COLUMNS.map(c => {
           const v = colAssignedTotal(c, r);
-          return v ? `<td${drill(c.key, null)}>${v}</td>` : '<td class="cell-zero">0</td>';
+          return v
+            ? `<td${drill(c.key, null)}>${v}</td>`
+            : `<td class="cell-zero${zeroFlash(null, c.key)}">0</td>`;
         }).join('')}
       </tr>`;
 
     el.table.innerHTML = head + `<tbody>${body}</tbody><tfoot>${foot}</tfoot>`;
     el.table.classList.toggle('heat', state.heatmap);
+
+    // Consumed. A sort or a search re-renders this table immediately afterwards, and
+    // those must not re-flash figures that have not moved again.
+    state.changed = new Set();
 
     // The header wraps to a variable number of lines, so its height is measured rather
     // than assumed — .section-row sticks to --head-h, immediately under the locked header.

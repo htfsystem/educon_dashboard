@@ -52,7 +52,13 @@
   --radius: 10px;
   --radius-lg: 16px;
   --radius-xl: 22px;
+  --radius-2xl: 28px;    /* bento tiles */
   --radius-pill: 999px;
+
+  /* The 1px highlight along a raised surface's top edge. Near-white on light; on dark
+     a raised surface catches far less, so it drops to a faint white rather than
+     inverting to a shadow, which would read as a dent. */
+  --edge-light: rgba(255, 255, 255, 0.75);
 
   /* Type scale, ~1.15 between steps. Sizes are only ever picked from this ladder. */
   --fs-micro: 10.5px;   /* uppercase eyebrows, table headers */
@@ -94,6 +100,7 @@
        read as a focus ring. */
     --accent: #4a90e8;
     --accent-hover: #6aa6ef;
+    --edge-light: rgba(255, 255, 255, 0.06);
     --good-text: #0ca30c;
 
     --seq-1: #184f95;
@@ -127,6 +134,7 @@
   --series-5: #d55181;
   --accent: #4a90e8;
   --accent-hover: #6aa6ef;
+  --edge-light: rgba(255, 255, 255, 0.06);
   --good-text: #0ca30c;
 
   --seq-1: #184f95;
@@ -192,6 +200,23 @@ h2 { font-size: var(--fs-md); }
 
 /* A full-width button scaling in from both edges reads as a wobble; it presses down. */
 .login-btn:active:not(:disabled) { transform: translateY(1px); }
+
+/* Magnetic: leans toward the cursor. --mag-x/--mag-y are written by EduConMotion
+   .magnetic; both are composed here so the press-scale still applies on top, and the
+   default of 0 means the untouched button sits exactly where it is laid out.
+   The lean springs back with overshoot; the press stays fast and flat. */
+.btn-magnetic {
+  transform: translate(var(--mag-x, 0), var(--mag-y, 0));
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease),
+              color 0.16s var(--ease),
+              transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.btn-magnetic:active { transform: translate(var(--mag-x, 0), var(--mag-y, 0)) scale(0.97); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-magnetic { transform: none; transition: none; }
+  .btn-magnetic:active { transform: none; }
+}
 
 /* A matrix cell has no border to push, so it takes the press on its numeral. */
 .matrix td.is-drill:active .cell-v { transform: scale(0.94); }
@@ -434,19 +459,42 @@ h2 { font-size: var(--fs-md); }
 .chart.dim .bar { opacity: 0.35; }
 .chart.dim .bar.active { opacity: 1; }
 
+/* Bars draw themselves out from the axis, one after another, rather than appearing
+   fully formed. fill-box origin means each bar scales from its own left edge, not the
+   SVG's — without it they all fly in from x=0. */
+.bar-grow {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation: bar-grow 0.62s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 55ms);
+}
+@keyframes bar-grow { from { transform: scaleX(0); } }
+
+/* The value catches up with its bar instead of sitting there waiting for it. */
+.value-in {
+  animation: value-in 0.4s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 55ms + 260ms);
+}
+@keyframes value-in { from { opacity: 0; transform: translateX(-6px); } }
+
 /* ---------- Matrix table ---------- */
 
 /* The grid is its own scroll region, always shorter than the viewport — otherwise the
    page scrolls instead of the table and the sticky header rides off the top. */
 /* Now that .panel draws no surface of its own, the scroll box carries it — the sticky
-   header cells paint --surface-1 and would otherwise sit on the page colour. */
+   header cells paint --surface-1 and would otherwise sit on the page colour. It takes
+   the same corner and the same diffusion shadow as a bento tile, so the dense page and
+   the overview page read as one product rather than two designs. */
 .table-scroll {
   overflow: auto;
   max-height: min(620px, calc(100vh - 190px));
   min-height: 260px;
   background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 1px 2px rgba(11, 11, 11, 0.04),
+    0 18px 40px -22px rgba(11, 11, 11, 0.18);
 }
 
 /* Fixed layout with explicit column widths: the 9 status columns + name + total all
@@ -532,6 +580,33 @@ h2 { font-size: var(--fs-md); }
 .matrix tbody tr:hover .col-name, .matrix tbody tr:hover .col-sl { background: var(--wash); }
 
 .cell-zero { color: var(--text-muted); opacity: 0.45; }
+
+/* A figure that moved since the last sync. The matrix reloads every two minutes and
+   nothing used to mark what actually changed — you had to have memorised the previous
+   number. The flash is set only when a *new report* differs from the one before it, so
+   sorting, filtering and searching never trigger it. Colour is not the only cue: the
+   cell also lifts, for anyone who cannot separate the two golds. */
+.cell-changed {
+  animation: cell-flash 2.4s var(--ease) both;
+}
+@keyframes cell-flash {
+  0%   { background: color-mix(in srgb, var(--warning) 55%, transparent); transform: translateY(-2px); }
+  22%  { background: color-mix(in srgb, var(--warning) 42%, transparent); transform: none; }
+  100% { background: transparent; transform: none; }
+}
+
+/* A row whose total moved gets a marker in the gutter that stays until the next sync,
+   so a change is still findable after the flash has faded. */
+.row-changed .col-sl { position: relative; }
+.row-changed .col-sl::before {
+  content: "";
+  position: absolute;
+  left: 2px; top: 50%;
+  width: 3px; height: 14px;
+  transform: translateY(-50%);
+  border-radius: var(--radius-pill);
+  background: var(--warning);
+}
 
 /* Heatmap cells carry a numeral in primary ink, so the tint is reinforcement,
    never the only cue and never a contrast risk. */
@@ -842,6 +917,157 @@ dialog.dialog-wide { width: min(760px, calc(100vw - 32px)); }
   font-variant-numeric: tabular-nums;
 }
 
+/* ============================================================ BENTO ========== */
+
+/* Two stacked tiles: the figure, then the chart. This was a 1.7fr / 1fr split with a
+   connection tile in the narrow column; with that removed a lead tile at 1.7fr would
+   leave a third of the row empty, so both tiles take the full width. */
+.bento {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+
+@media (max-width: 900px) {
+  .bento { gap: 14px; }
+}
+
+/* The tile surface. Depth comes from a wide, low-opacity diffusion shadow plus a 1px
+   inner highlight along the top edge — the way a real raised surface catches light —
+   rather than from a hard border or an outer glow. */
+.bcard {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--radius-2xl);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  box-shadow:
+    0 1px 2px rgba(11, 11, 11, 0.04),
+    0 18px 40px -22px rgba(11, 11, 11, 0.18),
+    inset 0 1px 0 var(--edge-light);
+  /* Staggered entrance: a waterfall, not a simultaneous pop. */
+  animation: tile-in 0.55s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 90ms);
+}
+
+@keyframes tile-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+}
+
+.bcard-in { position: relative; z-index: 1; padding: 26px 28px 28px; }
+
+/* Spotlight: the tile lights up under the cursor, following it. --mx/--my are written
+   by initSpotlight in dashboard.js on pointermove; --spot fades the whole layer in and
+   out so there is no hard edge when the pointer enters or leaves. */
+.bcard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: var(--spot, 0);
+  transition: opacity 0.35s var(--ease);
+  background: radial-gradient(
+    260px circle at var(--mx, 50%) var(--my, 50%),
+    color-mix(in srgb, var(--accent) 12%, transparent), transparent 68%);
+}
+
+/* And the border catches it too — a hairline that brightens where the cursor is. */
+.bcard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 1px;
+  opacity: var(--spot, 0);
+  transition: opacity 0.35s var(--ease);
+  background: radial-gradient(
+    200px circle at var(--mx, 50%) var(--my, 50%),
+    color-mix(in srgb, var(--accent) 55%, transparent), transparent 72%);
+  /* Masks the fill so only the 1px padding ring paints — a gradient border without
+     an extra element. */
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask-composite: exclude;
+}
+
+/* ---------- Lead tile: the figure ---------- */
+
+.stat { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+
+.stat-value {
+  font-size: clamp(44px, 6.4vw, 76px);
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+  /* Tabular figures keep the width fixed while the count-up runs, so the unit beside
+     it does not jitter left and right as the digits change. */
+}
+
+.stat-unit {
+  font-size: var(--fs-base);
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: -0.01em;
+}
+
+.stat-sub {
+  margin: 12px 0 0;
+  font-size: var(--fs-base);
+  color: var(--text-secondary);
+  max-width: 46ch;
+  line-height: 1.55;
+}
+.stat-sub em { font-style: normal; font-weight: 650; color: var(--good-text); }
+
+/* ---------- Lead tile: the pipeline as one stacked bar ---------- */
+
+/* The seven reported columns, in order, at their true proportions. Reading left to
+   right is reading the pipeline: unsubmitted forms on the left, disbursed on the right. */
+.pipebar {
+  display: flex;
+  height: 12px;
+  margin-top: 22px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--wash);
+}
+
+.pipebar span {
+  display: block;
+  height: 100%;
+  background: var(--seg, var(--series-1));
+  /* Grows from nothing on first paint and eases between years thereafter. */
+  transform-origin: left center;
+  animation: seg-in 0.7s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 60ms + 180ms);
+  transition: flex-grow 0.6s var(--ease);
+}
+@keyframes seg-in { from { transform: scaleX(0); } }
+
+.pipebar span + span { box-shadow: inset 1px 0 0 var(--surface-1); }
+
+.pipekey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 14px;
+}
+.pipekey-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.pipekey-dot { width: 8px; height: 8px; border-radius: 3px; flex: none; background: var(--seg); }
+.pipekey-n { font-weight: 650; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
 /* ---------- Loading: progress bar ---------- */
 
 /* A refresh over data already on screen. The figures stay put and readable; only this
@@ -944,6 +1170,20 @@ dialog.dialog-wide { width: min(760px, calc(100vw - 32px)); }
   .skeleton::after, .loadbar i { animation: none; }
   /* Without the sweep the bar must still read as active, so it fills the track. */
   .loadbar i { width: 100%; opacity: 0.6; }
+
+  /* Everything that moves on its own stops. What each animation was *reporting* still
+     has to land, though, so these resolve to their finished state rather than being
+     switched off mid-way: tiles are visible, bars are full width, segments full size. */
+  .bcard, .bar-grow, .value-in, .pipebar span {
+    animation: none;
+  }
+  .pipebar span { transition: none; }
+  /* The flash still needs to mark the change — it just does it without moving. */
+  .cell-changed {
+    animation: none;
+    background: color-mix(in srgb, var(--warning) 30%, transparent);
+  }
+  .bcard::before, .bcard::after { transition: none; }
 }
 
 @media (max-width: 640px) {
@@ -955,8 +1195,20 @@ dialog.dialog-wide { width: min(760px, calc(100vw - 32px)); }
 }
 
 @media print {
-  .topbar-controls, .tooltip, .drillpop, .sidebar { display: none; }
+  .topbar-controls, .tooltip, .drillpop, .sidebar, .loadbar { display: none; }
   #appShell { grid-template-columns: minmax(0, 1fr); }
   .panel { break-inside: avoid; box-shadow: none; }
-  .table-scroll { max-height: none; overflow: visible; }
+  .table-scroll { max-height: none; overflow: visible; box-shadow: none; }
+
+  /* Tiles print as plain bordered blocks: the diffusion shadow turns to grey mud on
+     paper, and the entrance animation would leave them at their opening opacity. */
+  .bento { display: block; }
+  .bcard {
+    break-inside: avoid;
+    box-shadow: none;
+    animation: none;
+    margin-bottom: 16px;
+  }
+  .bcard::before, .bcard::after { display: none; }
+  .bar-grow, .value-in, .pipebar span { animation: none; }
 }

@@ -286,39 +286,60 @@
 <!-- ---------------------------------------------------- PAGE 1 · DASHBOARD --- -->
 <main id="pageDashboard" class="layout page is-active" aria-busy="true">
 
-  <!-- A page header, not a hero. It used to be a full-bleed navy panel with a rotating
-       conic glow behind a single sentence — a lot of decoration carrying one figure,
-       and a continuously repainting element above a table of financial counts. The
-       figures now sit on the page itself, and the chart below leads. -->
-  <section class="pagehead">
-    <div class="pagehead-top">
-      <span class="eyebrow">Executive overview</span>
-      <span class="hero-live"><i class="live-dot"></i><span id="heroLive">Live · educon_prod</span></span>
-    </div>
-    <h2 class="pagehead-h" id="heroHeadline">Loading the pipeline…</h2>
-    <!-- No standing subtitle: this node is an error surface only (see renderOverview). -->
-    <p class="hero-sub" id="heroSub"></p>
-  </section>
+  <!-- Bento: an asymmetric tile grid rather than a row of equal cards. The lead tile
+       carries the figure, the narrow one carries the live state, and the chart spans
+       both. Each tile is a `data-spotlight` surface — see initSpotlight in dashboard.js. -->
+  <section class="bento">
 
-  <section class="panel panel-wide">
-    <div class="panel-head">
-      <div>
-        <h2>Status distribution</h2>
-        <p class="panel-sub" id="distSub">Exact student counts per application status</p>
-      </div>
-      <div class="panel-tools">
-        <!-- The year selector lives here, and is moved into the active page's
-             panel head by app.js — one element, so both pages stay in step. -->
-        <div class="year-slot" id="yearSlotDashboard">
-          <label class="field field-year" id="yearField">
-            <span class="field-label">Academic year</span>
-            <select id="yearSelect" class="select"></select>
-          </label>
+    <!-- ---- Lead tile: the headline figure and the whole pipeline as one bar ---- -->
+    <article class="bcard bcard-lead" data-spotlight style="--i:0">
+      <div class="bcard-in">
+        <span class="eyebrow">Executive overview</span>
+
+        <div class="stat">
+          <!-- data-count is the animation target; the text is what a no-JS or
+               reduced-motion reader sees. Both are written by renderOverview. -->
+          <span class="stat-value" id="statTracked" data-count="0">—</span>
+          <span class="stat-unit">students tracked</span>
         </div>
-        <div class="chip-row" id="stageLegend"></div>
+
+        <!-- Kept as #heroHeadline: renderOverview and its error paths already write here. -->
+        <p class="stat-sub" id="heroHeadline">Loading the pipeline…</p>
+
+        <!-- The seven reported columns as one stacked bar — the pipeline at a glance,
+             in the same order and the same colours the chart below uses. -->
+        <div class="pipebar" id="pipeBar" role="img" aria-label="Pipeline distribution"></div>
+        <div class="pipekey" id="pipeKey"></div>
+
+        <!-- Error surface only; empty by default so it takes no space. -->
+        <p class="hero-sub" id="heroSub"></p>
       </div>
-    </div>
-    <div id="statusChart" class="chart"></div>
+    </article>
+
+    <!-- ---- Chart tile ---- -->
+    <article class="bcard bcard-chart" data-spotlight style="--i:1">
+      <div class="bcard-in">
+        <div class="panel-head">
+          <div>
+            <h2>Status distribution</h2>
+            <p class="panel-sub" id="distSub">Exact student counts per application status</p>
+          </div>
+          <div class="panel-tools">
+            <!-- The year selector lives here, and is moved into the active page's
+                 panel head by app.js — one element, so both pages stay in step. -->
+            <div class="year-slot" id="yearSlotDashboard">
+              <label class="field field-year" id="yearField">
+                <span class="field-label">Academic year</span>
+                <select id="yearSelect" class="select"></select>
+              </label>
+            </div>
+            <div class="chip-row" id="stageLegend"></div>
+          </div>
+        </div>
+        <div id="statusChart" class="chart"></div>
+      </div>
+    </article>
+
   </section>
 
 </main>
