@@ -257,7 +257,12 @@
   const shell = $('appShell');
   const sidebar = $('sidebar');
   const scrim = $('sidebarScrim');
+  // Two buttons, one behaviour each, and CSS shows exactly one at a time: the rail
+  // toggle lives in the sidebar (wide screens), the drawer toggle in the topbar
+  // (narrow screens, where a closed drawer would take the sidebar's own button with it).
   const sidebarToggle = $('sidebarToggle');
+  const drawerToggle = $('drawerToggle');
+  const toggles = [sidebarToggle, drawerToggle];
   const resizer = $('sidebarResizer');
 
   const WIDE = matchMedia('(min-width: 901px)');
@@ -286,16 +291,18 @@
     syncToggle();
   }
 
-  /** The toggle's label and aria-expanded describe whichever mode is actually live. */
+  /** Both toggles are labelled for whichever mode is actually live — only one shows. */
   function syncToggle() {
     const drawerOpen = sidebar.classList.contains('is-open');
     const collapsed = shell.classList.contains('is-collapsed');
     const expanded = WIDE.matches ? !collapsed : drawerOpen;
-    sidebarToggle.setAttribute('aria-expanded', String(expanded));
-    sidebarToggle.setAttribute('aria-label',
-      WIDE.matches
-        ? (collapsed ? 'Expand sidebar' : 'Collapse sidebar')
-        : (drawerOpen ? 'Hide sections' : 'Show sections'));
+    const label = WIDE.matches
+      ? (collapsed ? 'Expand sidebar' : 'Collapse sidebar')
+      : (drawerOpen ? 'Hide sections' : 'Show sections');
+    for (const t of toggles) {
+      t.setAttribute('aria-expanded', String(expanded));
+      t.setAttribute('aria-label', label);
+    }
   }
 
   function openSidebar() {
@@ -311,17 +318,21 @@
     syncToggle();
   }
 
-  sidebarToggle.addEventListener('click', () => {
-    if (WIDE.matches) return setCollapsed(!shell.classList.contains('is-collapsed'));
-    return sidebar.classList.contains('is-open') ? closeSidebar() : openSidebar();
-  });
+  for (const t of toggles) {
+    t.addEventListener('click', () => {
+      if (WIDE.matches) return setCollapsed(!shell.classList.contains('is-collapsed'));
+      return sidebar.classList.contains('is-open') ? closeSidebar() : openSidebar();
+    });
+  }
 
   scrim.addEventListener('click', closeSidebar);
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && sidebar.classList.contains('is-open')) {
       closeSidebar();
-      sidebarToggle.focus();
+      // The drawer is only ever open below the breakpoint, where this is the
+      // visible toggle — focusing the hidden rail button would drop focus entirely.
+      drawerToggle.focus();
     }
   });
 

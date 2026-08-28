@@ -179,6 +179,8 @@
   flex: none;
 }
 .sidebar-brand .brand-mark-svg { flex: none; }
+/* The rail toggle is pinned to the sidebar's own right edge, clear of the title. */
+.sidebar-brand .sidebar-toggle { margin-left: auto; }
 .sidebar-name { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--text-primary); }
 .sidebar-tag  { font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin-top: 2px; }
 
@@ -214,9 +216,10 @@
   font-size: 11px; line-height: 1.55; color: var(--text-muted);
 }
 
-/* The scrim belongs to the narrow-screen drawer only. The toggle is always shown:
-   on wide screens it collapses the sidebar to a rail, on narrow ones it opens the
-   drawer — one control, two behaviours, decided by the breakpoint. */
+/* The scrim belongs to the narrow-screen drawer only. There are two toggles, one
+   behaviour each, and exactly one is ever visible: the rail toggle inside the
+   sidebar on wide screens, the drawer toggle in the topbar on narrow ones (where
+   a closed drawer would carry the sidebar's own button off-screen). */
 .sidebar-scrim { display: none; }
 
 .sidebar-toggle {
@@ -236,6 +239,9 @@
 /* The rail overrides --sidebar-w outright, so expanding again restores whatever
    width was last dragged (that lives in --sidebar-user-w, untouched). */
 @media (min-width: 901px) {
+  /* The drawer never opens at this width, so its toggle has nothing to do. */
+  .sidebar-toggle-drawer { display: none; }
+
   #appShell.is-collapsed { --sidebar-w: 66px; }
 
   /* Only the icons survive: labels, tagline and footer would all be clipped. */
@@ -245,7 +251,13 @@
   #appShell.is-collapsed .navlink span { display: none; }
 
   #appShell.is-collapsed .sidebar { padding-left: 8px; padding-right: 8px; }
-  #appShell.is-collapsed .sidebar-brand { justify-content: center; padding: 4px 0 16px; }
+  /* 50px of usable width in the rail cannot hold the 40px mark and the 34px toggle
+     side by side, so the brand stacks them instead of clipping one. */
+  #appShell.is-collapsed .sidebar-brand {
+    flex-direction: column; align-items: center; gap: 10px;
+    padding: 4px 0 16px;
+  }
+  #appShell.is-collapsed .sidebar-brand .sidebar-toggle { margin-left: 0; }
   #appShell.is-collapsed .navlink { justify-content: center; padding-left: 0; padding-right: 0; }
 
   /* Nothing to drag when the width is fixed by the rail. */
@@ -535,6 +547,10 @@ body[data-page="users"] .topbar-controls { display: none; }
   .sidebar-scrim[hidden] { display: none; }
 
   .sidebar-toggle { width: 36px; height: 36px; border-color: var(--border-strong); }
+
+  /* The drawer's own button would ride off-screen with it, so the topbar twin
+     is the only way back in at this width. */
+  .sidebar-toggle-rail { display: none; }
 
   /* The drawer is fixed-width here, and there is no rail to collapse into. */
   .sidebar-resizer { display: none; }

@@ -119,6 +119,11 @@
       <div class="sidebar-name">EduCon</div>
       <div class="sidebar-tag">P.R.I.D.E. thru EduCon</div>
     </div>
+
+    <!-- Wide screens only: collapses the sidebar to the icon rail. Its narrow-screen
+         twin lives in the topbar, because a closed drawer takes this one off-screen. -->
+    <button class="sidebar-toggle sidebar-toggle-rail" id="sidebarToggle" type="button"
+            aria-label="Collapse sidebar" aria-expanded="true" aria-controls="sidebar">☰</button>
   </div>
 
   <nav class="sidenav" id="mainNav" aria-label="Sections">
@@ -149,7 +154,9 @@
 
 <header class="topbar">
   <div class="topbar-top">
-  <button class="sidebar-toggle" id="sidebarToggle" type="button"
+  <!-- Narrow screens only: opens the off-canvas drawer. On wide screens the toggle
+       sits in the sidebar itself (.sidebar-toggle-rail) and this one is hidden. -->
+  <button class="sidebar-toggle sidebar-toggle-drawer" id="drawerToggle" type="button"
           aria-label="Show sections" aria-expanded="false" aria-controls="sidebar">☰</button>
 
   <h1 id="pageTitle">Dashboard</h1>
