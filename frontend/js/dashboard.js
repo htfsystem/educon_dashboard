@@ -73,6 +73,50 @@
     el.matrixSub.textContent = '';
   }
 
+  // ---------- Loading ----------
+
+  /* Two different states, because they are two different situations. A *first* load has
+     no figures to preserve, so the layout is drawn as skeletons at the size the real
+     content will take. A *refresh* has correct figures already on screen; replacing
+     them with skeletons every two minutes would be a worse answer than leaving them,
+     so only the 2px bar under the topbar moves. What this replaces — dimming the whole
+     .layout to 55% — did neither: it made the controls read as disabled. */
+  const setBusy = on => on ? window.EduConBusy.push() : window.EduConBusy.pop();
+
+  const skRow = () =>
+    '<div class="sk-row"><span class="skeleton sk-name"></span>' +
+    Array.from({ length: 8 }, () => '<span class="skeleton sk-cell"></span>').join('') +
+    '</div>';
+
+  /** Skeleton rows sized to the real grid, so nothing shifts when the table lands. */
+  function skeletonMatrix() {
+    el.table.innerHTML =
+      `<tbody><tr><td><div class="sk-rows">${
+        Array.from({ length: 9 }, skRow).join('')}</div></td></tr></tbody>`;
+  }
+
+  /** Skeleton bars: one per reported column, at the row height the chart will use. */
+  function skeletonChart() {
+    el.statusChart.innerHTML = `<div class="sk-bars">${
+      COLUMNS.map((_, i) =>
+        // Descending widths read as a plausible distribution rather than a blank block.
+        `<div class="sk-bar"><span class="skeleton sk-label"></span>` +
+        `<span class="skeleton sk-track" style="flex:0 0 ${72 - i * 8}%"></span></div>`
+      ).join('')}</div>`;
+  }
+
+  // ---------- Empty states ----------
+
+  /** An empty table with only a header and a total row reads as a failure, not an answer. */
+  function emptyState({ title, note, action }) {
+    return `<div class="empty">
+      <svg class="ico empty-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoTable"/></svg>
+      <div class="empty-title">${escapeHtml(title)}</div>
+      <p class="empty-note">${escapeHtml(note)}</p>
+      ${action ? `<button class="btn" type="button" id="${action.id}">${escapeHtml(action.label)}</button>` : ''}
+    </div>`;
+  }
+
   // ---------- SVG helpers ----------
   const NS = 'http://www.w3.org/2000/svg';
   function svgEl(tag, attrs = {}, text) {
@@ -177,6 +221,10 @@
 
   async function loadYear() {
     el.main.setAttribute('aria-busy', 'true');
+    // Nothing on screen yet — draw the shape of what is coming. On a refresh the
+    // existing figures stay put and only the progress bar reports the request.
+    if (!state.report) { skeletonMatrix(); skeletonChart(); }
+    setBusy(true);
     try {
       state.report = await getJSON(`/api/report?year=${encodeURIComponent(state.year)}`);
       // Fresh cell figures must not sit next to a drill-down list cached from the
@@ -188,6 +236,7 @@
       showError(error.message);
     } finally {
       el.main.removeAttribute('aria-busy');
+      setBusy(false);
     }
   }
 
@@ -227,6 +276,19 @@
     const data = COLUMNS
       .map(c => ({ col: c, count: colAssignedTotal(c, r) }))
       .filter(d => d.count > 0);
+
+    // Every reported column is zero for this year. That is an answer, and it needs to
+    // say so — an empty 0-height SVG would read as a chart that failed to draw.
+    if (!data.length) {
+      el.statusChart.innerHTML = emptyState({
+        title: `No tracked students in ${r.academicYear}`,
+        note: 'Every reported status is empty for this year. Students held only by the '
+            + 'rcp / clo buckets, and the excluded statuses, are not counted here.'
+      });
+      el.distSub.textContent = `0 of ${COLUMNS.length} tracked columns present in ${r.academicYear}`;
+      el.stageLegend.innerHTML = '';
+      return;
+    }
 
     const rowH = 30, gap = 6, padL = 216, padR = 54, padT = 22;
     const height = padT + data.length * (rowH + gap);
@@ -309,6 +371,37 @@
   function renderMatrix() {
     const r = state.report;
     const rows = visibleMembers();
+
+    // No rows is a real answer to a filter, but a table showing only a header and a
+    // Grand Total row does not say so. Name which filter emptied it and offer the
+    // way back, rather than leaving the user to guess whether the query failed.
+    if (!rows.length) {
+      const filtered = state.search.trim() || state.team !== 'ALL' || state.hideEmpty;
+      el.table.innerHTML = `<tbody><tr><td>${emptyState({
+        title: filtered ? 'No team members match these filters' : `No team members recorded in ${state.year}`,
+        note: filtered
+          ? (state.search.trim()
+              ? `Nothing matches “${state.search.trim()}” in the ${
+                  state.team === 'ALL' ? 'ETM + ATM' : state.team} roster.`
+              : 'No member in this team has a student with a record for the selected year.')
+          : 'Older years often have most cases parked on the rcp / clo buckets, which are '
+            + 'excluded from the roster. Try a more recent academic year.',
+        action: filtered ? { id: 'matrixClearFilters', label: 'Clear filters' } : null
+      })}</td></tr></tbody>`;
+
+      const clear = $('matrixClearFilters');
+      if (clear) clear.addEventListener('click', () => {
+        state.search = ''; state.team = 'ALL'; state.hideEmpty = false;
+        el.search.value = '';
+        el.team.value = 'ALL';
+        $('zeroToggle').classList.remove('is-on');
+        // The chart ignores these filters, so only the matrix needs redrawing —
+        // matching every other filter handler at the bottom of this file.
+        renderMatrix();
+      });
+      return;
+    }
+
     const max = Math.max(...rows.flatMap(m => COLUMNS.map(c => colValue(c, m.statuses))), 1);
 
     // One caret symbol, rotated for descending — ▲ and ▼ are different sizes in most
@@ -842,6 +935,9 @@
     },
     setTheme,
     themeMode,
-    isDark
+    isDark,
+    // Shared so the Users page composes its empty states from the same markup —
+    // two different-looking "nothing here" panels in one app is the thing to avoid.
+    emptyState
   };
 })();

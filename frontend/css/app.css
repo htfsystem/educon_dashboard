@@ -66,18 +66,14 @@
 }
 .login-screen[hidden] { display: none; }
 
+/* A static wash in the brand's two colours. It used to drift on a 26s loop behind a
+   blur(20px) — a full-viewport filtered layer repainting continuously, for decoration
+   nobody watches while typing a password. The gradient stays; the movement goes. */
 .login-aura {
   position: absolute; inset: -30%;
   background:
-    radial-gradient(38% 38% at 22% 28%, rgba(47, 116, 208, 0.30), transparent 70%),
-    radial-gradient(34% 34% at 78% 68%, rgba(58, 168, 90, 0.26), transparent 70%),
-    radial-gradient(30% 30% at 62% 18%, rgba(230, 161, 58, 0.22), transparent 70%);
-  filter: blur(20px);
-  animation: aura-drift 26s ease-in-out infinite alternate;
-}
-@keyframes aura-drift {
-  from { transform: translate3d(-3%, -2%, 0) scale(1); }
-  to   { transform: translate3d(3%, 2%, 0) scale(1.08); }
+    radial-gradient(38% 38% at 24% 26%, rgba(47, 116, 208, 0.26), transparent 70%),
+    radial-gradient(34% 34% at 78% 70%, rgba(58, 168, 90, 0.22), transparent 70%);
 }
 
 .login-card {
@@ -105,7 +101,7 @@
   background: var(--page); color: var(--text-primary);
 }
 .login-field input:focus-visible, .login-field select:focus-visible {
-  outline: 2px solid var(--ec-blue-500); outline-offset: 1px; border-color: transparent;
+  outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent;
 }
 
 .login-error {
@@ -121,10 +117,10 @@
 .login-btn {
   margin-top: 6px; font: inherit; font-size: var(--fs-base); font-weight: 600;
   padding: 12px; border: 0; border-radius: var(--radius-sm); cursor: pointer;
-  color: #fff; background: var(--ec-blue-700);
+  color: #fff; background: var(--accent);
   box-shadow: 0 1px 2px rgba(13, 59, 122, 0.24), 0 6px 16px -6px rgba(13, 59, 122, 0.45);
 }
-.login-btn:hover:not(:disabled) { background: var(--ec-blue-500); }
+.login-btn:hover:not(:disabled) { background: var(--accent-hover); }
 .login-btn:disabled { opacity: 0.6; cursor: progress; box-shadow: none; }
 
 .login-foot { font-size: var(--fs-xs); color: var(--text-muted); text-align: center; margin: 4px 0 0; }
@@ -205,10 +201,10 @@
 }
 .navlink:hover { background: var(--wash); color: var(--text-primary); }
 .navlink.is-active {
-  background: var(--ec-blue-700); color: #fff; border-color: var(--ec-blue-700);
+  background: var(--accent); color: #fff; border-color: var(--accent);
 }
 .navlink[hidden] { display: none; }
-.navlink:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+.navlink:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* Sizing only — fill, stroke and weight come from .ico in dashboard.css. Setting
    fill here would win on source order (app.css is linked second) and re-solidify
@@ -238,7 +234,7 @@
   cursor: pointer;
 }
 .sidebar-toggle:hover { background: var(--wash); color: var(--text-primary); }
-.sidebar-toggle:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+.sidebar-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---------- Collapsed rail (wide screens) ---------- */
 /* The rail overrides --sidebar-w outright, so expanding again restores whatever
@@ -284,7 +280,7 @@
 }
 .sidebar-resizer:hover,
 .sidebar-resizer:focus-visible,
-#appShell.is-resizing .sidebar-resizer { background: color-mix(in srgb, var(--series-1) 45%, transparent); }
+#appShell.is-resizing .sidebar-resizer { background: color-mix(in srgb, var(--accent) 55%, transparent); }
 .sidebar-resizer:focus-visible { outline: none; }
 
 /* While dragging, the pointer must not select text or land on iframes/cells. */
@@ -313,7 +309,7 @@
 }
 .usermenu-trigger:hover { background: var(--wash); border-color: var(--border); }
 .usermenu-trigger[aria-expanded="true"] { background: var(--wash); border-color: var(--border-strong); }
-.usermenu-trigger:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+.usermenu-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .user-avatar {
   width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
@@ -367,7 +363,7 @@
   cursor: pointer; text-align: left;
 }
 .usermenu-item:hover { background: var(--wash); }
-.usermenu-item:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
+.usermenu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .usermenu-item[hidden] { display: none; }
 
 .usermenu-ico { width: 17px; height: 17px; color: var(--text-secondary); flex: none; }
@@ -415,54 +411,56 @@ body[data-page="users"] .topbar-controls { display: none; }
 /* An element the role cannot use is removed, not merely disabled. */
 [data-perm-denied] { display: none !important; }
 
-/* ================================================= PAGE 1 · ASCENT HERO ===== */
+/* ============================================ PAGE 1 · PAGE HEADER ========== */
 
-/* .layout is a two-column grid; the hero lays out its own internals, so it
-   spans the full width. */
-.hero { grid-column: 1 / -1; }
-
-.hero {
-  position: relative; overflow: hidden; border-radius: var(--radius-xl);
-  background: radial-gradient(120% 150% at 12% 0%, var(--ec-blue-500) 0%, var(--ec-blue-900) 58%, #071a37 100%);
-  color: #fff; isolation: isolate;
+/* This was a full-bleed navy panel with a rotating conic-gradient glow behind one
+   sentence. It is now a page header on the page's own background: left-aligned, the
+   figure carried by weight and size rather than by a coloured box, and no perpetual
+   animation above a table of financial counts. */
+.pagehead {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--border);
 }
-.hero-glow {
-  position: absolute; inset: -40%; z-index: 0; opacity: 0.55;
-  background:
-    conic-gradient(from 200deg at 78% 22%, transparent 0deg, rgba(230, 161, 58, 0.40) 44deg, transparent 96deg),
-    conic-gradient(from 20deg at 12% 88%, transparent 0deg, rgba(58, 168, 90, 0.44) 54deg, transparent 116deg);
-  animation: hero-swirl 26s linear infinite;
-}
-@keyframes hero-swirl { to { transform: rotate(360deg); } }
 
-.hero-inner { position: relative; z-index: 1; padding: 24px 32px 26px; }
-.hero-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
-.hero-eyebrow {
+.pagehead-top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap;
+}
+
+.eyebrow {
   font-size: var(--fs-micro); letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--ec-gold-300); font-weight: 600;
-}
-.hero-live { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: #c3d8fa; }
-.live-dot {
-  width: 8px; height: 8px; border-radius: 50%; background: #4fe08a;
-  box-shadow: 0 0 0 0 rgba(79, 224, 138, 0.65); animation: live-pulse 2.1s infinite;
-}
-@keyframes live-pulse {
-  70%  { box-shadow: 0 0 0 9px rgba(79, 224, 138, 0); }
-  100% { box-shadow: 0 0 0 0  rgba(79, 224, 138, 0); }
+  color: var(--text-muted); font-weight: 600;
 }
 
-.hero-h {
-  font-size: clamp(22px, 2.7vw, 32px); font-weight: 750; line-height: 1.12;
-  letter-spacing: -0.02em; margin: 14px 0 8px; max-width: 24ch; text-wrap: balance;
+.hero-live {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: var(--fs-sm); color: var(--text-muted);
 }
-.hero-h em { font-style: normal; color: var(--ec-gold-300); }
-/* Nothing follows the sub now, so it carries no trailing margin of its own. */
-.hero-sub { color: #cfdff8; font-size: var(--fs-base); line-height: 1.5; max-width: 78ch; margin: 0; }
+/* A steady dot, not a pulsing one. It reports a connection state that does not change
+   from moment to moment, and it sits directly above the figures. */
+.live-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--good);
+}
+
+/* Weight and colour carry the hierarchy here, not scale — the old 32px headline over
+   a saturated ground shouted for attention the page did not need drawn. */
+.pagehead-h {
+  font-size: clamp(20px, 2vw, 26px); font-weight: 650; line-height: 1.2;
+  letter-spacing: -0.02em; margin: 0; max-width: 30ch; text-wrap: balance;
+  color: var(--text-primary);
+}
+/* The disbursed figure is the one number worth colouring. */
+.pagehead-h em { font-style: normal; color: var(--good-text); }
+
+.hero-sub { color: var(--text-secondary); font-size: var(--fs-base); line-height: 1.5; max-width: 78ch; margin: 0; }
 /* An error-only subtitle takes no space until it has something to say. */
 .hero-sub:empty { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-glow, .live-dot, .login-aura { animation: none; }
   .login-card { animation: none; }
 }
 
@@ -485,15 +483,24 @@ body[data-page="users"] .topbar-controls { display: none; }
 .role-manager { background: color-mix(in srgb, var(--ec-green-500) 18%, transparent); color: var(--ec-green-600); }
 .role-viewer  { background: var(--wash); color: var(--text-secondary); }
 
-.state-on  { color: var(--good-text); font-size: var(--fs-sm); }
-.state-off { color: var(--text-muted); font-size: var(--fs-sm); }
+/* Was ● / ○ / ✗ inline — three text glyphs of three different optical sizes that sat
+   off the baseline. One drawn dot, coloured by state, aligns with the label. */
+.state-on, .state-off {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: var(--fs-sm);
+}
+.state-on  { color: var(--good-text); }
+.state-off { color: var(--text-muted); }
+
+.state-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: currentColor; }
+.state-off .state-dot { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .mini {
   font: inherit; font-size: var(--fs-sm); padding: 5px 10px; cursor: pointer;
   border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
   background: var(--surface-1); color: var(--text-secondary);
 }
-.mini:hover { color: var(--text-primary); border-color: var(--ec-blue-500); }
+.mini:hover { color: var(--text-primary); border-color: var(--accent); }
 .mini-danger:hover { color: var(--critical); border-color: var(--critical); }
 
 .dialog {
@@ -524,7 +531,7 @@ body[data-page="users"] .topbar-controls { display: none; }
   cursor: pointer;
 }
 .dialog-close:hover { background: var(--wash); color: var(--text-primary); }
-.dialog-close:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+.dialog-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 
 /* Below this width the sidebar becomes an off-canvas drawer: the grid collapses

@@ -29,3 +29,19 @@ window.colValue = (col, statusMap) =>
 /** Sum of every reported column — the "tracked" figure both pages quote. */
 window.trackedFrom = statusMap =>
   window.PIPELINE_COLUMNS.reduce((n, c) => n + window.colValue(c, statusMap), 0);
+
+/* The progress bar under the topbar, shared by both loaders.
+ *
+ * Page 1 runs two requests at once — /api/overview from app.js and /api/report from
+ * dashboard.js — so a plain hidden = true from whichever returned first would clear
+ * the bar while the other was still in flight. It counts instead. Defined here because
+ * columns.js is the first script loaded, so both callers can rely on it existing. */
+window.EduConBusy = {
+  n: 0,
+  push() { this.n += 1; this.sync(); },
+  pop()  { this.n = Math.max(0, this.n - 1); this.sync(); },
+  sync() {
+    const bar = document.getElementById('loadBar');
+    if (bar) bar.hidden = this.n === 0;
+  }
+};

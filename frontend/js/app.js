@@ -434,11 +434,15 @@
     if (!state.year) return;
     const page = $('pageDashboard');
     page.setAttribute('aria-busy', 'true');
+    window.EduConBusy.push();
 
     // The previous year's figures must not sit under the new year's label while
-    // the request is in flight — that reads as live data and is not.
+    // the request is in flight — that reads as live data and is not. A skeleton at
+    // the headline's own height says "a number is coming" without reserving the
+    // wrong amount of space or letting a stale figure stand.
     $('heroLive').textContent = `Loading · ${state.year}`;
-    $('heroHeadline').textContent = 'Loading the pipeline…';
+    $('heroHeadline').innerHTML =
+      '<span class="skeleton sk-line-lg" style="display:block;width:min(32ch,100%)"></span>';
 
     try {
       state.overview = await api(`/api/overview?year=${encodeURIComponent(state.year)}`);
@@ -449,6 +453,7 @@
       $('heroSub').textContent = error.message;
     } finally {
       page.removeAttribute('aria-busy');
+      window.EduConBusy.pop();
     }
   }
 
@@ -510,7 +515,9 @@
           <td><b>${esc(u.username)}</b></td>
           <td>${esc(u.fullName)}</td>
           <td><span class="role-pill role-${esc(u.role)}">${esc(u.role)}</span></td>
-          <td>${u.active ? '<span class="state-on">● Active</span>' : '<span class="state-off">○ Disabled</span>'}</td>
+          <td>${u.active
+            ? '<span class="state-on"><i class="state-dot"></i>Active</span>'
+            : '<span class="state-off"><i class="state-dot"></i>Disabled</span>'}</td>
           <td>${new Date(u.createdAt).toLocaleDateString()}</td>
           <td><div class="row-actions">
             <button class="mini" data-edit="${u.id}" type="button">Edit</button>
@@ -545,13 +552,23 @@
   }
 
   function renderHistory(history) {
+    if (!history.length) {
+      $('loginTable').innerHTML = `<tbody><tr><td>${window.EduConSummary.emptyState({
+        title: 'No sign-ins recorded yet',
+        note: 'Every sign-in attempt against this dashboard, successful or not, is listed '
+            + 'here once someone has signed in. The log holds the last 50.'
+      })}</td></tr></tbody>`;
+      return;
+    }
     $('loginTable').innerHTML = `
       <thead><tr><th>When</th><th>Username</th><th>Result</th><th>From</th></tr></thead>
       <tbody>${history.map(h => `
         <tr>
           <td>${new Date(h.at).toLocaleString()}</td>
           <td>${esc(h.username)}</td>
-          <td>${h.ok ? '<span class="state-on">● Signed in</span>' : '<span class="state-off">✗ Rejected</span>'}</td>
+          <td>${h.ok
+            ? '<span class="state-on"><i class="state-dot"></i>Signed in</span>'
+            : '<span class="state-off"><i class="state-dot"></i>Rejected</span>'}</td>
           <td>${esc(h.ip || '—')}</td>
         </tr>`).join('')}</tbody>`;
   }
