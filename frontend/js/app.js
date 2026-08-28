@@ -81,6 +81,10 @@
     $('loginScreen').hidden = true;
     $('appShell').hidden = false;
 
+    // With AUTH_DISABLED set there is no session to end — signing out would only
+    // bounce straight back in, so the control is removed rather than left dead.
+    $('logoutBtn').hidden = !!user.authDisabled;
+
     $('userName').textContent = user.fullName;
     $('userRole').textContent = user.role;
     $('userAvatar').textContent = initials(user.fullName);

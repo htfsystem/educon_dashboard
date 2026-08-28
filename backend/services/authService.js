@@ -239,9 +239,29 @@ function readToken(token) {
 
 // ---------- express middleware ----------
 
+// AUTH_DISABLED turns the login screen off entirely: every request arrives as this
+// synthetic administrator, so /api/auth/me always succeeds and the frontend goes
+// straight to the dashboard. It is a temporary switch — the accounts, the hashes and
+// every permission check below are untouched, so clearing the flag restores sign-in
+// exactly as it was. Never set it on a deployment reachable from the internet.
+const AUTH_DISABLED = String(process.env.AUTH_DISABLED || '').toLowerCase() === 'true';
+
+const OPEN_ACCESS_USER = {
+  id: 0,
+  username: 'guest',
+  fullName: 'EduCon Dashboard',
+  role: 'admin',
+  active: true,
+  createdAt: null,
+  permissions: PERMISSIONS.admin,
+  authDisabled: true
+};
+
 /** Attaches req.user when a valid session cookie is present. Never rejects. */
 function attachUser(req, _res, next) {
-  req.user = readToken(req.cookies && req.cookies[SESSION_COOKIE]);
+  req.user = AUTH_DISABLED
+    ? OPEN_ACCESS_USER
+    : readToken(req.cookies && req.cookies[SESSION_COOKIE]);
   next();
 }
 
@@ -255,7 +275,7 @@ const requirePermission = permission => (req, res, next) => {
 };
 
 module.exports = {
-  ROLES, PERMISSIONS, SESSION_COOKIE, SESSION_TTL_MS,
+  ROLES, PERMISSIONS, SESSION_COOKIE, SESSION_TTL_MS, AUTH_DISABLED,
   open, listUsers, createUser, updateUser, deleteUser,
   verify, loginHistory, issueToken, attachUser, requirePermission
 };
