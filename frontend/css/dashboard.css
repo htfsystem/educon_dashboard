@@ -907,6 +907,9 @@ tr.filter-row th {
    "…Government Medical College" printed on top of the city beside it. */
 .drill-table td.dt-name,
 .drill-table td.dt-college,
+.drill-table td.dt-uni,
+.drill-table td.dt-field,
+.drill-table td.dt-spec,
 .drill-table td.dt-city {
   white-space: normal;
   overflow-wrap: anywhere;
@@ -914,6 +917,21 @@ tr.filter-row th {
 .dt-name    { min-width: 148px; max-width: 260px; font-weight: 600; }
 .dt-college { min-width: 170px; max-width: 320px; }
 .dt-city    { max-width: 190px; }
+
+/* The three decoded course columns. Capped like the other prose columns: the longest
+   university in the list is "National University of Educational Planning and
+   Administration", which unwrapped is wider than the rest of the table put together. */
+.dt-field   { min-width: 120px; max-width: 190px; }
+.dt-spec    { min-width: 130px; max-width: 230px; }
+.dt-uni     { min-width: 150px; max-width: 260px; }
+
+/* Their headings wrap; every other one does not. "Field of education" and
+   "Board / University" set on one line are wider than most of the values beneath them,
+   and with fifteen columns in the dialog that width is charged to the horizontal scroll
+   for nothing. Two short lines under a sticky header cost no usable space. */
+.drill-table thead th.dt-field,
+.drill-table thead th.dt-spec,
+.drill-table thead th.dt-uni { white-space: normal; }
 
 /* Statuses stay on one line in the dialog, where the column can simply be as wide as
    the longest value. The preview has no such room, so there they wrap — at the

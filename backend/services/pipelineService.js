@@ -338,14 +338,15 @@ const PROFILE_JOINS = `
   LEFT JOIN educon_student_current_address_details   ad ON ad.s_id = %STUDENT%`;
 
 const PROFILE_COLUMNS = `
-  ce.sce_education, ce.sce_branch, ce.sce_course_name, ce.sce_name AS collegeName,
+  ce.sce_education, ce.sce_branch, ce.sce_course_name, ce.sce_board,
+  ce.sce_name AS collegeName,
   ce.sce_college_place, ce.sce_year, ce.current_year,
   pd.sp_gender_category_id, pd.sp_minority_id, pd.sp_food_category_id, pd.sp_family_status,
   ad.spa_city, ad.spa_district, ad.spa_state,
   ad.sa_city,  ad.sa_district,  ad.sa_state`;
 
 /**
- * The eleven facts card 1 reports, decoded.
+ * The twelve facts card 1 reports, decoded.
  *
  * Everything coded goes through codeLabels.js, which falls back to the raw code rather
  * than to a guess — see the confidence tiers documented there. `null` means the student
@@ -363,6 +364,9 @@ function studentProfile(row) {
     education: codes.label(codes.EDUCATION, row.sce_education),
     fieldOfEducation: codes.label(codes.FIELD_OF_EDUCATION, row.sce_branch),
     specialization: codes.label(codes.SPECIALIZATION, row.sce_course_name),
+    // Board for a school student (SSC, CBSE), awarding university for everyone else —
+    // one column in the application, one list of codes, so one field here.
+    board: codes.label(codes.BOARD, row.sce_board),
     college: codes.text(row.collegeName),
     studyYear: codes.studyYear(row.sce_year, row.current_year),
     collegeCity: codes.text(row.sce_college_place),

@@ -117,12 +117,23 @@
       html: s => (s.handler
         ? `${esc(s.handler.name)}<span class="dt-sub">${esc(s.handler.loginId)}</span>`
         : BLANK) },
+    // Education → field → specialization is the application's own hierarchy, and reads
+    // as one thought across three columns: "Graduation · Medicine · MBBS : Allopathic".
+    // They were raw codes until 2026-09-01 and so were deliberately kept off this list;
+    // now that codeLabels.js has the real dropdowns they are the answer to "what kind of
+    // student is this", which is the question the dialog exists to ask.
     { key: 'education',   label: 'Education',    cls: 'dt-edu',     filter: 'select',
       text: s => prof(s).education },
+    { key: 'field',       label: 'Field of education', cls: 'dt-field', filter: 'select',
+      text: s => prof(s).fieldOfEducation },
+    { key: 'specialization', label: 'Specialization',  cls: 'dt-spec',  filter: 'select',
+      text: s => prof(s).specialization },
     { key: 'studyYear',   label: 'Std / Year',   cls: 'dt-stdyear', filter: 'select',
       text: s => prof(s).studyYear },
     { key: 'college',     label: 'College',      cls: 'dt-college', filter: 'text',
       text: s => prof(s).college },
+    { key: 'board',       label: 'Board / University', cls: 'dt-uni', filter: 'select',
+      text: s => prof(s).board },
     { key: 'collegeCity', label: 'College city', cls: 'dt-city',    filter: 'text',
       text: s => prof(s).collegeCity },
     { key: 'gender',      label: 'Gender',       cls: 'dt-tag',     filter: 'select',
@@ -453,7 +464,7 @@
 
     // Academic facts are per academic year; a year the student has no education row for
     // says so rather than borrowing another year's college.
-    const hasAcademic = p.education || p.college || p.studyYear || p.collegeCity;
+    const hasAcademic = p.education || p.college || p.studyYear || p.collegeCity || p.board;
 
     stuBody.innerHTML = `
       <p class="stu-status">Current status ${statusTag(y.status)}</p>
@@ -467,6 +478,7 @@
           ${factRow('Field of education', p.fieldOfEducation)}
           ${factRow('Specialization', p.specialization)}
           ${factRow('College name', p.college)}
+          ${factRow('Board / University', p.board)}
           ${factRow('Std / current year', p.studyYear)}
           ${factRow('College city', p.collegeCity)}
           ${factRow('Gender', p.gender)}
