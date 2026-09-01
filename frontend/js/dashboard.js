@@ -49,8 +49,7 @@
     hideEmpty: false,
     // Cell keys whose figure moved in the most recent sync. Consumed and cleared by
     // the next renderMatrix, so a change flashes exactly once.
-    changed: new Set(),
-    database: null      // from /api/health, stamped onto the exports
+    changed: new Set()
   };
 
   const $ = id => document.getElementById(id);
@@ -231,8 +230,9 @@
         getJSON('/api/health')
       ]);
 
-      // Still needed: the database name is stamped onto the exports.
-      state.database = health.database;
+      // /api/health is now called purely as a liveness guard: it turns an unreachable
+      // database into one clear message instead of a confusing failure further in. The
+      // name it also returns is no longer used — the exports stopped printing it.
       if (health.status !== 'healthy') throw new Error('Database unreachable');
 
       // The app shell fills this selector before either data page opens; honour a
@@ -773,10 +773,13 @@
     sheet.push({ cells: [{ v: 'EduCon — Student Status Summary', s: S.title }], height: 26 });
     merges.push(`A1:${last}1`);
 
+    // Academic year and generated-at only. The database name and its "(read-only)" note
+    // used to sit here too; they were removed on 2026-09-01 because this sheet is printed
+    // and circulated, and "educon_prod" is an internal detail that means nothing to the
+    // people reading the report. Do not put it back on the exported page.
     sheet.push({
       cells: [{
-        v: `Academic year: ${r.academicYear}     ·     Generated: ${new Date().toLocaleString()}` +
-           `     ·     Database: ${state.database || 'educon_prod'} (read-only)`,
+        v: `Academic year: ${r.academicYear}     ·     Generated: ${new Date().toLocaleString()}`,
         s: S.info
       }],
       height: 18
