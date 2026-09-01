@@ -425,6 +425,18 @@
     (etmId ? ` data-etm="${etmId}"` : '') +
     ' title="Show the students behind this number"';
 
+  /**
+   * Puts the empty-rows chip in step with state.hideEmpty. Its label names the action
+   * the next click performs, not the state it is already in, so a reader always knows
+   * what pressing it will do. Called from both places that change the flag — the chip
+   * itself and the "Clear filters" link in the empty state.
+   */
+  function syncZeroToggle() {
+    const btn = $('zeroToggle');
+    btn.classList.toggle('is-on', state.hideEmpty);
+    btn.textContent = state.hideEmpty ? 'Unhide empty rows' : 'Hide empty rows';
+  }
+
   function renderMatrix() {
     const r = state.report;
     const rows = visibleMembers();
@@ -451,7 +463,7 @@
         state.search = ''; state.team = 'ALL'; state.hideEmpty = false;
         el.search.value = '';
         el.team.value = 'ALL';
-        $('zeroToggle').classList.remove('is-on');
+        syncZeroToggle();
         // The chart ignores these filters, so only the matrix needs redrawing —
         // matching every other filter handler at the bottom of this file.
         renderMatrix();
@@ -925,9 +937,9 @@
     renderMatrix();
   });
 
-  $('zeroToggle').addEventListener('click', e => {
+  $('zeroToggle').addEventListener('click', () => {
     state.hideEmpty = !state.hideEmpty;
-    e.currentTarget.classList.toggle('is-on', state.hideEmpty);
+    syncZeroToggle();
     renderMatrix();
   });
 

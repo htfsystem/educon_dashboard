@@ -269,6 +269,12 @@ h2 { font-size: var(--fs-md); }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field-grow { flex: 1 1 200px; max-width: 300px; }
 
+/* The member search is a short lookup box, not a prose field: nobody types more than a
+   name into it, so it holds one and stops. It used to be .field-grow and stretched to
+   300px, which read as the most important control on the page. */
+.field-search { flex: 0 0 168px; }
+.field-search .input { min-width: 0; }
+
 .field-label {
   font-size: var(--fs-xs);
   font-weight: 500;
@@ -376,7 +382,18 @@ h2 { font-size: var(--fs-md); }
 .year-slot:empty { display: none; }
 
 .field-year { align-items: flex-end; }
-.field-year .select { min-width: 138px; width: auto; }
+
+/* Sized by their own content — a select at width:auto is as wide as its widest option
+   ("2026-2027", "ETM + ATM") plus the arrow, which is all either control ever has to
+   show. The 138px / 150px floors left a band of empty box beside every value. The
+   dropdown itself is untouched: this is the closed control's width, not the list's. */
+.field-year .select,
+.field-team .select { min-width: 0; width: auto; }
+
+/* On the summary page the year sits in the topbar beside the member search, so it
+   reads left-to-right like the controls around it; in a panel head it stays right-
+   aligned under .panel-tools. */
+.topbar-controls .field-year { align-items: flex-start; }
 
 /* ---------- KPI tiles ---------- */
 
@@ -442,6 +459,10 @@ h2 { font-size: var(--fs-md); }
 }
 
 .chip-toggle { cursor: pointer; }
+
+/* Its label swaps between "Hide" and "Unhide empty rows"; without a floor the chip —
+   and the Heatmap chip beside it — shift sideways on every click. */
+#zeroToggle { min-width: 15ch; justify-content: center; }
 .chip-toggle.is-on {
   color: var(--text-primary);
   background: var(--wash);

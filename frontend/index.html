@@ -270,7 +270,7 @@
   <div class="loadbar" id="loadBar" hidden aria-hidden="true"><i></i></div>
 
   <div class="topbar-controls">
-    <label class="field page-summary-only">
+    <label class="field field-team page-summary-only">
       <span class="field-label">Team</span>
       <select id="teamSelect" class="select">
         <option value="ALL">ETM + ATM</option>
@@ -279,10 +279,14 @@
       </select>
     </label>
 
-    <label class="field field-grow page-summary-only">
+    <label class="field field-search page-summary-only">
       <span class="field-label">Search member</span>
-      <input id="searchInput" class="input" type="search" placeholder="Name or code…" autocomplete="off">
+      <input id="searchInput" class="input" type="search" placeholder="Name…" autocomplete="off">
     </label>
+
+    <!-- The year selector's summary-page home: it sits beside the member search rather
+         than in the matrix panel head, so both filters for this page are in one place. -->
+    <div class="year-slot page-summary-only" id="yearSlotSummary"></div>
 
     <div class="btn-group">
       <button id="exportExcel" class="btn btn-primary page-summary-only" data-perm="export" type="button">Export Excel</button>
@@ -356,14 +360,14 @@
 <main id="main" class="layout page" aria-busy="true">
 
   <section class="panel panel-wide">
+    <!-- No heading: the page title in the topbar already names this page, and the
+         year selector now lives in the topbar controls beside the member search. -->
     <div class="panel-head">
       <div>
-        <h2>Status matrix</h2>
         <!-- No standing subtitle: this node is an error surface only (see clearError). -->
         <p class="panel-sub" id="matrixSub"></p>
       </div>
       <div class="panel-tools">
-        <div class="year-slot" id="yearSlotSummary"></div>
         <div class="chip-row">
           <button class="chip chip-toggle is-on" id="heatToggle" type="button">Heatmap</button>
           <button class="chip chip-toggle" id="zeroToggle" type="button">Hide empty rows</button>
