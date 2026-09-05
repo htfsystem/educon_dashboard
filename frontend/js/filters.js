@@ -10,6 +10,13 @@
  * called again after each rebuild; it re-creates the row, puts the values back, and
  * re-applies them. The caller never has to remember what was typed.
  *
+ * Surviving a *render* is not the same as surviving a *session*, and the two were
+ * conflated until 2026-09-05. The drill-down list calls `forget('drillList')` when its
+ * dialog closes: a refresh mid-read must not lose what the user typed, but the next cell
+ * they open is a different question, and answering it through the previous cell's filter
+ * reads as missing students rather than as a filter still in force. The Users tables keep
+ * theirs — they are a standing view of one page, not a window that opens and closes.
+ *
  * Filtering is done on the rendered cell text rather than on the underlying data. That
  * is deliberate: what the user sees in a column is exactly what they are filtering, so a
  * decoded label ("Vegetarian") filters as the word on screen and not as the stored `1`.
@@ -252,11 +259,36 @@ window.EduConFilters = (() => {
     apply(entry);
   }
 
-  /** Is anything currently filtering this table? Used to word an empty state. */
-  const isActive = id => {
-    const entry = store.get(id);
-    return !!entry && Object.values(entry.values).some(v => v !== '');
-  };
+  /**
+   * Drop a table's remembered filters entirely, so the next mount() starts blank.
+   *
+   * `clear()` is for a table that is on screen — it empties the controls the user is
+   * looking at. This is for one that is going away: the drill-down dialog forgets its
+   * filters when it closes, because the next number opened is a different question and
+   * arriving at it pre-filtered by the last one reads as missing students rather than as
+   * a filter still in force. Safe to call when the table's node is already gone.
+   */
+  function forget(id) {
+    store.delete(id);
+  }
 
-  return { mount, clear, isActive };
+  /**
+   * The filters currently in force, as [{ label, value }], in column order.
+   *
+   * Exported so a report can say what it is a subset of. A filtered list saved to Excel
+   * with no record of the filter is the dangerous artefact here: "58 students" circulates
+   * as the cell's total. The export stamps this into the sheet header.
+   */
+  function active(id) {
+    const entry = store.get(id);
+    if (!entry) return [];
+    return entry.spec.columns
+      .filter(c => (entry.values[c.index] ?? '') !== '')
+      .map(c => ({ label: c.label || `Column ${c.index + 1}`, value: entry.values[c.index] }));
+  }
+
+  /** Is anything currently filtering this table? Used to word an empty state. */
+  const isActive = id => active(id).length > 0;
+
+  return { mount, clear, forget, active, isActive };
 })();

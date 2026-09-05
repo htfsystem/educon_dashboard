@@ -2,14 +2,14 @@
  *
  * Turns every number in the status matrix into a way into the students behind it:
  *
- *   hover  a compact preview — Sr. No · Student ID · Student · Current status
+ *   hover  a compact preview — Sr. No · Student ID · Student · Current status · Family status
  *   click  the full list, filterable column by column, in a dialog that can be maximised
  *   click a student  two cards: their academic details, and their money
  *
  * Read-only, like the rest of the dashboard: every request here is a GET.
  *
  * WHY THE TWO VIEWS SHOW DIFFERENT COLUMNS
- * The hover preview has to fit beside the number it explains, so it stays at four
+ * The hover preview has to fit beside the number it explains, so it stays at five
  * columns and answers "who". The dialog is where the question becomes "who, and what
  * kind of student" — it carries the academic and personal attributes, one filter per
  * column, which is what the maximise control is for. Both are drawn from the same
@@ -18,6 +18,24 @@
  * The ETM/ATM column appears only when the rows do not all name the same handler. That
  * is exactly the Grand Total case: a member's own cell has one handler by construction,
  * and a column repeating one name down every row is noise.
+ *
+ * THE FILTERS LAST EXACTLY AS LONG AS THE DIALOG (2026-09-05)
+ * They survive a re-render — the two-minute refresh must not swallow what was typed —
+ * but not a close. Closing forgets them, so the next number opened is answered as itself
+ * rather than through the previous question's filter. See the `close` handler below.
+ *
+ * SORTING BY STUDENT ID (2026-09-05)
+ * One column sorts, at the user's request: Student ID, ascending or descending. The list
+ * otherwise arrives in the server's own order (student name, A→Z). Everything else in the
+ * list is a category rather than a sequence, and the filter row is the right tool for
+ * those — see the header rules in `listTable`.
+ *
+ * EXPORTING WHAT IS ON SCREEN (2026-09-05)
+ * The Export button in the dialog head writes exactly the visible rows to .xlsx. It is
+ * built from the rendered table, not from the payload, so the filters cannot be applied
+ * one way to the screen and another to the sheet. The sheet's header names the cell, the
+ * academic year and every filter in force — a filtered list circulated without that
+ * record gets read as the cell's total by whoever opens it next week.
  */
 
 (() => {
@@ -106,7 +124,10 @@
   const LIST_COLUMNS = [
     { key: 'sr',      label: 'Sr. No',         cls: 'dt-sr',      filter: null,
       text: (s, i) => String(i + 1) },
+    // The one sortable column, and the one whose filter is worded as a search: a student
+    // code is looked up ("show me e617"), not chosen from a list of 158.
     { key: 'code',    label: 'Student ID',     cls: 'dt-id',      filter: 'text',
+      placeholder: 'Search ID…', sortable: true,
       text: s => s.code },
     { key: 'name',    label: 'Student',        cls: 'dt-name',    filter: 'text',
       text: s => s.name },
@@ -141,11 +162,18 @@
     { key: 'community',   label: 'Community',    cls: 'dt-tag',     filter: 'select',
       text: s => prof(s).community },
     { key: 'food',        label: 'Food',         cls: 'dt-tag',     filter: 'select',
-      text: s => prof(s).food }
+      text: s => prof(s).food },
+    // Family status is a decision criterion rather than a description — an orphan or a
+    // single-parent student is read differently from one with both parents — so unlike
+    // the other personal fields it also rides in the hover preview below.
+    { key: 'family',      label: 'Family status', cls: 'dt-family', filter: 'select',
+      text: s => prof(s).familyStatus }
   ];
 
-  // The preview beside a number stays narrow enough to sit next to it.
-  const POP_KEYS = ['sr', 'code', 'name', 'status'];
+  // The preview beside a number stays narrow enough to sit next to it: who the student
+  // is, where they are in the pipeline, and the one personal fact the business weighs a
+  // case on. Everything else waits for the dialog.
+  const POP_KEYS = ['sr', 'code', 'name', 'status', 'family'];
 
   /**
    * Which columns this rendering shows.
@@ -163,13 +191,74 @@
     });
   }
 
-  function listTable(students, { clickable, keys, id }) {
+  /* ---------- Sorting, on Student ID and nothing else ----------
+   *
+   * Asked for on 2026-09-05. The list arrives in the server's order — student name, A→Z —
+   * and the business reads it by student code as often as by name, in both directions.
+   *
+   * THREE STATES, NOT TWO: ascending, descending, and back to the name order the list
+   * opens in. A plain asc/desc toggle would leave no way back to the default without
+   * closing the dialog and losing the filters with it. The header's tooltip names what the
+   * NEXT click does, the same convention the summary page's empty-rows chip follows, so
+   * the control can never contradict the state it is in.
+   *
+   * The sort is a reading preference, like the maximised size, and so persists across
+   * openings — unlike the filters, which are forgotten on close. The difference is that a
+   * sort hides nothing: arriving at a new cell re-sorted shows every student it should,
+   * while arriving pre-filtered shows fewer and reads as missing data.
+   */
+  const SORT_CYCLE = [0, 1, -1];        // default -> ascending -> descending -> default
+  let listSortDir = 0;
+
+  /* Student codes are a letter and a number ("e617", "E747"), and the handful of students
+     with no code at all fall back to their numeric id. `numeric` is what puts e9 before
+     e10 rather than after it; `sensitivity: 'base'` is what stops the upper-case E-codes
+     sorting as a separate block from the lower-case ones. Ties fall back to the name, so
+     the order is total and a re-render never reshuffles equal rows. */
+  const byCode = dir => (a, b) =>
+    dir * String(a.code ?? '').localeCompare(String(b.code ?? ''), undefined,
+      { numeric: true, sensitivity: 'base' })
+    || String(a.name ?? '').localeCompare(String(b.name ?? ''));
+
+  const sortStudents = students =>
+    (listSortDir === 0 ? students : [...students].sort(byCode(listSortDir)));
+
+  /** The tooltip names the next click's effect, never the current state. */
+  const nextSortLabel = dir => (
+    dir === 0 ? 'Sort by Student ID, A → Z'
+      : dir === 1 ? 'Sort by Student ID, Z → A'
+        : 'Clear the sort — back to student name order');
+
+  const ariaSort = dir => (dir === 1 ? 'ascending' : dir === -1 ? 'descending' : 'none');
+
+  /**
+   * One rendering of a list.
+   *
+   * `sortDir` undefined means "no sorting controls at all" — that is the hover preview,
+   * which is a glance at a number rather than a table to work in.
+   */
+  function listTable(students, { clickable, keys, id, sortDir }) {
     if (!students.length) {
       return '<p class="drill-empty">No students in this cell.</p>';
     }
     const cols = columnsFor(students, keys);
 
-    const head = cols.map(c => `<th class="${c.cls}">${esc(c.label)}</th>`).join('');
+    /* A real <button> inside the <th>, not a click handler on the cell: it is focusable,
+       reachable by keyboard and announced as a control without a line of ARIA. The
+       stylesheet hangs every visual rule off `.th-sort` for a related reason — filters.js
+       copies a header cell's classes onto the filter cell beneath it, so anything styled
+       on the th itself would also paint the filter box below as a sort control. */
+    const head = cols.map(c => {
+      if (sortDir === undefined || !c.sortable) {
+        return `<th class="${c.cls}">${esc(c.label)}</th>`;
+      }
+      const caret = sortDir === 0 ? ''
+        : `<svg class="ico sort-arrow${sortDir === -1 ? ' is-desc' : ''}" viewBox="0 0 24 24"` +
+          ' aria-hidden="true"><use href="#icoCaret"/></svg>';
+      return `<th class="${c.cls} is-sortable" aria-sort="${ariaSort(sortDir)}"><button` +
+        ` type="button" class="th-sort" title="${esc(nextSortLabel(sortDir))}">${
+          esc(c.label)}${caret}</button></th>`;
+    }).join('');
     const body = students.map((s, i) => `
       <tr${clickable ? ` tabindex="0" role="button" data-student="${s.studentId}"` : ''}>
         ${cols.map(c => {
@@ -185,13 +274,18 @@
     </table>`;
   }
 
+  /* The drill list's filter identity. The export reads the active filters under it and
+     the dialog's close handler forgets them under it, so all three agree by construction
+     rather than by three copies of the same string. */
+  const LIST_FILTERS = 'drillList';
+
   /** The filter spec for a rendered list — indices follow the columns actually drawn. */
   const filterSpec = (students, keys, onChange) => ({
-    id: 'drillList',
+    id: LIST_FILTERS,
     renumber: 0,                        // Sr. No counts the rows still showing
     columns: columnsFor(students, keys)
       .map((c, index) => ({ index, type: c.filter, label: c.label,
-        placeholder: c.filter === 'text' ? 'Filter…' : undefined }))
+        placeholder: c.filter === 'text' ? (c.placeholder || 'Filter…') : undefined }))
       .filter(c => c.type),
     onChange
   });
@@ -290,6 +384,7 @@
   const listBody = $('drillBody');
   const listFoot = $('drillFoot');
   const listMaxBtn = $('drillMax');
+  const listExportBtn = $('drillExport');
 
   // What the dialog is currently showing. The year select rewrites `year` in place, so
   // the same cell can be read across academic years without closing the dialog.
@@ -314,6 +409,9 @@
     await paintList();
   }
 
+  /** How many rows are on screen right now — the filtered count when filters are set. */
+  const listVisible = () => (listShown === null ? listTotal : listShown);
+
   function listFootText() {
     const plural = n => `${n} student${n === 1 ? '' : 's'}`;
     const filtered = listShown !== null && listShown !== listTotal;
@@ -323,43 +421,97 @@
       : count;
   }
 
+  /* The export button offers exactly what is on screen, so it is disabled whenever there
+     is nothing on screen to offer: while the list is loading, when it failed, and when
+     the filters have narrowed it to nothing. A button that downloads a header row and no
+     students is worse than a button that says it has nothing to give. */
+  function syncExportButton(ready) {
+    if (!listExportBtn) return;                 // the role has no export permission
+    const n = ready ? listVisible() : 0;
+    listExportBtn.disabled = n === 0;
+    listExportBtn.title = n === 0
+      ? 'Nothing to export'
+      : `Download these ${n} student${n === 1 ? '' : 's'} as an Excel sheet`;
+  }
+
+  // The list currently loaded, in the order the server sent it. Sorting reorders a copy,
+  // so the default order is always still there to return to.
+  let listStudents = [];
+
+  /**
+   * Draw the loaded list — the initial paint, and every sort after it.
+   *
+   * A sort rebuilds the whole table rather than only reordering the rows, because Sr. No,
+   * the filter row and the select options all have to agree with the order on screen.
+   * That costs nothing the reader can feel: filters.js is re-mounted straight after and
+   * puts back every value that was typed, and no request is made — the list is already in
+   * hand.
+   */
+  function renderList() {
+    const students = sortStudents(listStudents);
+    const clickable = can('view:finance');
+
+    listBody.innerHTML = listTable(students, {
+      clickable, id: 'drillListTable', sortDir: listSortDir
+    });
+
+    listShown = null;
+    listTotal = students.length;
+    listFoot.textContent = listFootText();
+
+    // Filters are mounted after the table is in the DOM, because the select options
+    // are read off the rendered cells — the same text the user filters against.
+    const table = $('drillListTable');
+    if (table) {
+      window.EduConFilters.mount(table, filterSpec(students, null, shown => {
+        listShown = shown;
+        listFoot.textContent = listFootText();
+        syncExportButton(true);
+      }));
+    }
+    syncExportButton(true);
+
+    // The header button is a new node after every render, so the listener is bound here
+    // rather than once, and focus is moved onto the replacement. Without that, Enter on
+    // the header would drop the user back to the top of the dialog and reversing a sort
+    // would cost a second journey through the tab order. A mouse click is unaffected —
+    // the ring is :focus-visible, so it shows for the keyboard only.
+    const sortBtn = listBody.querySelector('.th-sort');
+    if (sortBtn) {
+      sortBtn.addEventListener('click', () => {
+        const i = SORT_CYCLE.indexOf(listSortDir);
+        listSortDir = SORT_CYCLE[(i + 1) % SORT_CYCLE.length];
+        renderList();
+        listBody.querySelector('.th-sort')?.focus();
+      });
+    }
+
+    if (!clickable) return;
+    listBody.querySelectorAll('[data-student]').forEach(row => {
+      row.addEventListener('click', () => openStudent(Number(row.dataset.student)));
+      row.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        openStudent(Number(row.dataset.student));
+      });
+    });
+  }
+
   async function paintList() {
     const seq = ++listSeq;
     listBody.innerHTML = '<p class="drill-empty">Loading…</p>';
     listFoot.textContent = '';
+    syncExportButton(false);
 
     try {
       const { students } = await fetchList(listCtx);
       if (seq !== listSeq || !listDialog.open) return;
 
-      const clickable = can('view:finance');
-      listBody.innerHTML = listTable(students, { clickable, id: 'drillListTable' });
-
-      listShown = null;
-      listTotal = students.length;
-      listFoot.textContent = listFootText();
-
-      // Filters are mounted after the table is in the DOM, because the select options
-      // are read off the rendered cells — the same text the user filters against.
-      const table = $('drillListTable');
-      if (table) {
-        window.EduConFilters.mount(table, filterSpec(students, null, shown => {
-          listShown = shown;
-          listFoot.textContent = listFootText();
-        }));
-      }
-
-      if (!clickable) return;
-      listBody.querySelectorAll('[data-student]').forEach(row => {
-        row.addEventListener('click', () => openStudent(Number(row.dataset.student)));
-        row.addEventListener('keydown', e => {
-          if (e.key !== 'Enter' && e.key !== ' ') return;
-          e.preventDefault();
-          openStudent(Number(row.dataset.student));
-        });
-      });
+      listStudents = students;
+      renderList();
     } catch (error) {
       if (seq !== listSeq) return;
+      listStudents = [];
       listBody.innerHTML = `<p class="drill-empty drill-error">${esc(error.message)}</p>`;
     }
   }
@@ -370,6 +522,141 @@
   });
 
   $('drillClose').addEventListener('click', () => listDialog.close());
+
+  /* ---------- Closing the dialog releases the filters ----------
+   *
+   * Asked for on 2026-09-05. Filters were remembered between openings, because the state
+   * lives in js/filters.js keyed by table id and survives a re-render — which is right
+   * while the dialog is open (a two-minute refresh must not lose what was typed) and
+   * wrong once it closes. Someone who narrows a cell to "Female · MBBS", closes the
+   * dialog and opens a different number was being shown that number filtered by the
+   * previous question, with no visible cause: the count in the footer was smaller than
+   * the cell they clicked, which reads as missing students rather than as a filter.
+   *
+   * So the state is forgotten on close, not merely emptied — the table node goes with the
+   * next render anyway, and forgetting is what makes the next mount() start blank.
+   *
+   * `close` covers every way out: the ✕, Escape, and a programmatic close. The listener
+   * is separate from syncMaxButton's because the two answer different questions — the
+   * maximised size is a reading preference and deliberately does persist.
+   */
+  listDialog.addEventListener('close', () => {
+    window.EduConFilters.forget(LIST_FILTERS);
+    listShown = null;
+    listTotal = 0;
+    syncExportButton(false);
+  });
+
+  /* ---------- Exporting what is on screen ----------
+   *
+   * The sheet is built from the rendered table rather than from the `students` payload,
+   * which is what makes "export what I filtered" true by construction rather than by a
+   * second implementation of the filter that could drift from the first. It also carries
+   * the decoded labels and exactly the columns actually drawn — the ETM/ATM column, for
+   * one, only exists on the Grand Total row.
+   *
+   * Every export stamps the cell it came from and the filters in force. A filtered list
+   * circulated with no record of the filter is the real hazard here: "58 students" is
+   * read as the cell's total by whoever opens the file a week later.
+   */
+  function exportList() {
+    const table = $('drillListTable');
+    if (!table || !window.EduConXlsx) return;
+
+    const X = window.EduConXlsx;
+    const S = X.S;
+
+    // The header row only — tHead's second row is the filter row, whose controls are not
+    // data and must not become column headings.
+    const headCells = [...(table.tHead.rows[0]?.cells || [])];
+    const headers = headCells.map(th => th.textContent.trim());
+    if (!headers.length) return;
+
+    // Hidden rows are the ones the filters excluded; group headings do not occur here.
+    const bodyRows = [...(table.tBodies[0]?.rows || [])].filter(r => !r.hidden);
+    if (!bodyRows.length) return;
+
+    const filters = window.EduConFilters.active(LIST_FILTERS);
+    const last = X.colLetter(headers.length - 1);
+    const rows = [];
+    const merges = [];
+
+    rows.push({ cells: [{ v: `EduCon — ${listCtx.colLabel}`, s: S.title }], height: 26 });
+    merges.push(`A1:${last}1`);
+
+    rows.push({
+      cells: [{
+        v: `${listCtx.who}     ·     Academic year: ${listCtx.year}     ·     Generated: ${new Date().toLocaleString()}`,
+        s: S.info
+      }],
+      height: 18
+    });
+    merges.push(`A2:${last}2`);
+
+    // Said plainly, and only when it is true: an unfiltered sheet must not carry a line
+    // implying it might be a subset. The sort is stamped for the same reason the filters
+    // are — the rows come out in the order on screen, so the sheet says what that order is
+    // rather than leaving a reader to guess why it is not alphabetical by name.
+    const sortNote = listSortDir === 0 ? ''
+      : `     ·     Sorted by Student ID (${listSortDir === 1 ? 'A → Z' : 'Z → A'})`;
+    rows.push({
+      cells: [{
+        v: (filters.length
+          ? `Filtered: ${filters.map(f => `${f.label} = ${f.value}`).join('  ·  ')}     ·     ` +
+            `${bodyRows.length} of ${listTotal} students`
+          : `All ${listTotal} student${listTotal === 1 ? '' : 's'} in this cell — no filters applied`
+        ) + sortNote,
+        s: S.info
+      }],
+      height: 18
+    });
+    merges.push(`A3:${last}3`);
+
+    rows.push({ cells: [] });
+    rows.push({ cells: headers.map(h => ({ v: h, s: S.head })), height: 32 });
+    const HEAD_ROW = 5;
+
+    /* Cell text, not the underlying record: what the reader saw is what they get. The
+       ETM/ATM cell holds the handler's name with their login id stacked under it in a
+       <span>, and a plain textContent would run the two together as "Rohit Deshmukhrd" —
+       hence joining the child nodes with a space. Sr. No is renumbered against the
+       filtered rows by filters.js already; it is rewritten here as a number so Excel
+       treats the column as numeric rather than as text. */
+    bodyRows.forEach((tr, i) => {
+      rows.push({
+        cells: [...tr.cells].map((td, ci) => {
+          const text = [...td.childNodes]
+            .map(n => (n.nodeType === 3 ? n.nodeValue : n.textContent))
+            .join(' ').replace(/\s+/g, ' ').trim();
+          if (ci === 0) return { v: i + 1, s: S.num };
+          return { v: text, s: S.txt };
+        })
+      });
+    });
+
+    // Sized by what the column holds: identifiers and tags stay narrow, the prose columns
+    // (college, specialization, university) get the room they need.
+    const width = h => {
+      const key = h.toLowerCase();
+      if (key.startsWith('sr')) return 6;
+      if (key.includes('college') && !key.includes('city')) return 34;
+      if (key.includes('specialization') || key.includes('university')) return 30;
+      if (key.includes('status') || key.includes('student') || key.includes('etm')) return 24;
+      return 18;
+    };
+
+    // The filename says which cell, whose, which year, and whether it is a subset — the
+    // four things someone needs to know from a file sitting in a Downloads folder.
+    const stamp = filters.length ? '-filtered' : '';
+    X.save(
+      [{ name: listCtx.colLabel, rows, merges, cols: headers.map(h => ({ w: width(h) })), freezeRow: HEAD_ROW }],
+      `${X.safeName(`EduCon-${listCtx.colLabel}-${listCtx.who}-${listCtx.year}${stamp}`)}.xlsx`
+    );
+  }
+
+  // Hidden by app.js for a role without `export` ([data-perm] nodes get `hidden` and
+  // `data-perm-denied`), so the optional chaining is defensive only.
+  listExportBtn?.addEventListener('click', exportList);
 
   /* ---------- Maximise ----------
    *
@@ -398,6 +685,7 @@
   // not worth a try/catch on every open.
   listDialog.addEventListener('close', syncMaxButton);
   syncMaxButton();
+  syncExportButton(false);      // nothing is open yet, so there is nothing to export
 
   // ---------- The student dialog ----------
 

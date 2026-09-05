@@ -824,10 +824,12 @@ tr.filter-row th {
 .drillpop {
   position: fixed;
   z-index: 95;
-  /* Was 460px. The type scale went up a step and the Grand Total preview carries a
-     fifth column (the handler), so the four-column case would otherwise start wrapping
-     names that used to sit on one line. */
-  width: 545px;
+  /* Was 460px, then 545px. The type scale went up a step, the preview gained Family
+     status (a decision criterion, wanted without a click) and the Grand Total row
+     carries the handler on top of that — six columns at the widest. Sized for that case
+     and checked as a render: the two name columns still take a second line, which the
+     rule below allows on purpose, but no column is cut off at the panel edge. */
+  width: 660px;
   max-width: calc(100vw - 16px);
   background: var(--surface-1);
   color: var(--text-primary);
@@ -959,6 +961,56 @@ tr.filter-row th {
    underscores, where js/students.js puts a <wbr>. */
 .drillpop .drill-table td.dt-status { white-space: normal; }
 
+/* Family status. The values are short ("Both parents", "Father expired") and stay on one
+   line; it is the two-word heading that is wider than any of them, so that wraps — the
+   same trade the three course columns make above. */
+.drill-table thead th.dt-family { white-space: normal; }
+.dt-family { max-width: 110px; }
+
+/* The one sortable heading in the drill list — Student ID, ascending or descending.
+ *
+ * Every rule hangs off the button rather than off the `.is-sortable` th, and that is
+ * load-bearing: filters.js copies a header cell's classes onto the filter cell beneath it
+ * so the two stay the same column, which means anything painted on `.is-sortable` itself
+ * would also paint the search box below as a sort control. The button exists only in the
+ * header row, so styling it cannot leak downwards. */
+.drill-table thead th .th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  /* Inherited, not restated: the heading must read identically whether it sorts or not —
+     same size, same uppercase, same tracking as the fourteen headings beside it. */
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: var(--radius-xs);
+  transition: color 0.16s var(--ease);
+}
+.drill-table thead th .th-sort:hover { color: var(--accent); }
+.drill-table thead th .th-sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The same caret the status matrix uses, flipped for descending, so one shape means
+   "sorted this way" everywhere in the dashboard. No caret at all is the third state:
+   the list is in the server's student-name order. */
+.drill-table thead th .sort-arrow {
+  color: var(--accent);
+  width: 12px;
+  height: 12px;
+  flex: none;
+  stroke-width: 2.4;   /* holds up at 12px, where 1.5 goes faint */
+}
+.drill-table thead th .sort-arrow.is-desc { transform: rotate(180deg); }
+
 .dt-sr { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .dt-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-xs); }
 
@@ -1019,10 +1071,90 @@ dialog.dialog-wide { width: min(1080px, calc(100vw - 32px)); }
   align-items: flex-start;
   padding: 22px 24px 14px;
 }
-#drillDialog .field-year, #studentDialog .field-year { margin-left: auto; }
-/* Maximise sits beside Close, so the year select's margin-left:auto pushes the pair
-   together at the right rather than stranding one of them mid-header. */
-#drillMax { margin-left: 4px; }
+/* ---------- The dialog head's control row ----------
+ *
+ * The year select, Export, maximise and close are ONE group, in their own flex row, and
+ * that is the whole point. Loose in `.dialog-head` each of them aligned itself against
+ * the title block — which is two lines tall, and taller still when a student's name
+ * wraps — so the controls landed on three different heights and the head read as a
+ * jumble. Inside this row they align to each other and to nothing else.
+ *
+ * `flex-end` is the baseline they share: the field label floats above its select, and
+ * every control's bottom edge lines up with the select's. `margin-left: auto` here is
+ * what pushes the whole group right, so the title keeps the left.
+ */
+.dialog-head-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+  /* Loose in the head, each icon button carried `margin-right: -6px` to sit flush with
+     the dialog's 24px padding. The group carries that pull now — at -4px, because the
+     buttons grew from 30px to 34px and the glyph inside is centred, so it needs 2px less
+     to land in the same optical place. */
+  margin-right: -4px;
+}
+
+/* One height for everything in the row, so "one line" is true of the control tops as
+   well as their bottoms. 34px is the select's own height (13px text + 7px padding + 1px
+   border, doubled) — matched explicitly rather than left to three different box models
+   to agree by luck. */
+.dialog-head-actions .select,
+.dialog-head-actions .drill-export,
+.dialog-head-actions .dialog-close {
+  height: 34px;
+}
+
+/* The icon buttons carry a negative margin to sit flush with the dialog's padding when
+   they are loose in the head. In the row that margin would drag them off the shared
+   baseline, so it is dropped and the row is nudged as a whole instead. */
+.dialog-head-actions .dialog-close {
+  width: 34px;
+  margin: 0;
+}
+
+/* ---------- Export, in the list dialog's head ----------
+ *
+ * Blue, and labelled. It is the only control in this dialog that produces something —
+ * maximise and close are reversible and cost nothing to try, this one puts a file on the
+ * reader's machine — so it takes the same accent the summary page's own Export carries.
+ * Two identical actions on two screens must not look like two different controls.
+ */
+.drill-export {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 13px;
+  /* A little more air before the maximise/close pair than within the row: Export acts on
+     the content, those two act on the window, and the extra 4px is what separates the
+     two ideas without needing a divider rule to say it. */
+  margin-right: 4px;
+}
+.drill-export .ico { width: 16px; height: 16px; }
+
+/* Nothing on screen to export — mid-load, after a failure, or filtered down to no rows.
+   Stated rather than hidden: a control that vanishes reads as a bug, and the title
+   attribute says why it is unavailable. The accent is kept and dimmed rather than
+   swapped for grey, so the button does not appear to change identity when it wakes. */
+.drill-export:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.drill-export:disabled:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.drill-export:disabled:active { transform: none; }
+
+/* Narrow dialogs keep the icon and drop the word — the title and aria-label still carry
+   the meaning, and the year select is what needs the room. */
+@media (max-width: 560px) {
+  .drill-export span { display: none; }
+  .drill-export { padding: 0 9px; }
+  .dialog-head-actions { gap: 6px; }
+}
 
 .drill-scroll {
   max-height: min(58vh, 440px);

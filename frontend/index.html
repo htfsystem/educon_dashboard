@@ -96,6 +96,13 @@
     <symbol id="icoClose" viewBox="0 0 24 24">
       <path d="m6.75 6.75 10.5 10.5M17.25 6.75 6.75 17.25"/>
     </symbol>
+    <!-- Download. An arrow into a tray — the shape every browser uses for "save this
+         file", so it needs no learning beside the Export label it sits next to. -->
+    <symbol id="icoDownload" viewBox="0 0 24 24">
+      <path d="M12 3.75v10.5"/>
+      <path d="m7.75 10 4.25 4.25L16.25 10"/>
+      <path d="M4.75 16.5v2a1.75 1.75 0 0 0 1.75 1.75h11a1.75 1.75 0 0 0 1.75-1.75v-2"/>
+    </symbol>
     <!-- Maximise / restore. Four corner brackets pointing out, then in — the same shape
          reversed, so the two states read as one control rather than two icons. -->
     <symbol id="icoExpand" viewBox="0 0 24 24">
@@ -470,9 +477,11 @@
 </dialog>
 
 <!-- ============================================== STUDENT DRILL-DOWN ========== -->
-<!-- Hover preview for a matrix cell. Four columns only — Sr. No, student ID, name and
-     the exact status — so it stays narrow enough to sit beside the number it explains.
-     pointer-events are live (unlike .tooltip) so a long list can be scrolled. -->
+<!-- Hover preview for a matrix cell. Five columns only — Sr. No, student ID, name, the
+     exact status and family status (a criterion cases are decided on, so it is worth the
+     width) — plus the handler on the Grand Total row. Narrow enough to sit beside the
+     number it explains; pointer-events are live (unlike .tooltip) so a long list can be
+     scrolled. Sorting and the filter row belong to the dialog, not here. -->
 <div id="drillPop" class="drillpop" role="tooltip" hidden>
   <div class="drillpop-head" id="drillPopHead"></div>
   <div class="drillpop-body" id="drillPopBody"></div>
@@ -486,19 +495,34 @@
       <h3 id="drillTitle">Students</h3>
       <p class="panel-sub" id="drillMeta"></p>
     </div>
-    <label class="field field-year">
-      <span class="field-label">Academic year</span>
-      <select id="drillYear" class="select"></select>
-    </label>
-    <!-- Grows the dialog to the viewport, so every column of the list is readable at
-         once. js/students.js swaps the icon and the label between the two states. -->
-    <button class="dialog-close" id="drillMax" type="button"
-            aria-pressed="false" aria-label="Maximise dialog">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoExpand"/></svg>
-    </button>
-    <button class="dialog-close" id="drillClose" type="button" aria-label="Close">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoClose"/></svg>
-    </button>
+    <!-- One group, so the select, Export, maximise and close share a single baseline.
+         Loose in .dialog-head they each aligned against the title block instead, and the
+         controls came out on three different heights. -->
+    <div class="dialog-head-actions">
+      <label class="field field-year">
+        <span class="field-label">Academic year</span>
+        <select id="drillYear" class="select"></select>
+      </label>
+      <!-- Downloads exactly the rows on screen — the filters applied to this list are
+           applied to the sheet, and named in its header so a subset can never be read as
+           the whole cell. Hidden for a role without `export`, like the summary page's own
+           button; the server enforces the same permission on the data behind it. -->
+      <button class="btn btn-primary drill-export" id="drillExport" type="button"
+              data-perm="export" aria-label="Export these students to Excel"
+              title="Download these students as an Excel sheet">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoDownload"/></svg>
+        <span>Export</span>
+      </button>
+      <!-- Grows the dialog to the viewport, so every column of the list is readable at
+           once. js/students.js swaps the icon and the label between the two states. -->
+      <button class="dialog-close" id="drillMax" type="button"
+              aria-pressed="false" aria-label="Maximise dialog">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoExpand"/></svg>
+      </button>
+      <button class="dialog-close" id="drillClose" type="button" aria-label="Close">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoClose"/></svg>
+      </button>
+    </div>
   </div>
   <div class="drill-scroll" id="drillBody"></div>
   <p class="drill-foot" id="drillFoot"></p>
@@ -512,13 +536,16 @@
       <h3 id="studentName">Student</h3>
       <p class="panel-sub"><span class="student-code" id="studentCode"></span></p>
     </div>
-    <label class="field field-year">
-      <span class="field-label">Academic year</span>
-      <select id="studentYear" class="select"></select>
-    </label>
-    <button class="dialog-close" id="studentClose" type="button" aria-label="Close">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoClose"/></svg>
-    </button>
+    <!-- Grouped for the same reason as the list dialog's head, so the two read alike. -->
+    <div class="dialog-head-actions">
+      <label class="field field-year">
+        <span class="field-label">Academic year</span>
+        <select id="studentYear" class="select"></select>
+      </label>
+      <button class="dialog-close" id="studentClose" type="button" aria-label="Close">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoClose"/></svg>
+      </button>
+    </div>
   </div>
   <div id="studentBody"></div>
 </dialog>
@@ -528,6 +555,8 @@
 <script src="js/columns.js"></script>
 <!-- Before students.js and dashboard.js: both mount column filters as they render. -->
 <script src="js/filters.js"></script>
+<!-- The workbook writer, shared by the status matrix's export and the drill-down list's. -->
+<script src="js/xlsx.js"></script>
 <script src="js/students.js"></script>
 <script src="js/dashboard.js"></script>
 <script src="js/app.js"></script>
