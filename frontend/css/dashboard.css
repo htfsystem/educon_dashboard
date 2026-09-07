@@ -534,25 +534,23 @@ h2 { font-size: var(--fs-md); }
    figures being squeezed.
 
    min-width is what changed when Approval auth and Sanction auth were added, and it is
-   measured, not chosen. Five fixed columns take 32 + 210 + 90 + 90 + 56 = 478px before a
-   single status column, and a status column needs 125px: the longest word in any heading,
-   "Disbursement", is 111px at this uppercase micro-type plus 7px of padding each side.
-   Below 478 + 7x125 the headings start breaking mid-word — "DISBURSEMEN / T PENDING",
-   which reads as a rendering fault rather than as a wrap.
+   measured, not chosen. Five fixed columns now take 32 + 210 + 136 + 136 + 56 = 570px
+   before a single status column, and a status column needs 125px: the longest word in
+   any heading, "Disbursement", is 111px at this uppercase micro-type plus 7px of padding
+   each side. Below 570 + 7x125 the headings start breaking mid-word — "DISBURSEMEN /
+   T PENDING", which reads as a rendering fault rather than as a wrap.
 
-   So the grid is 1353px at minimum and scrolls sideways under that, inside .table-scroll
-   (already overflow:auto, with .shell-main already carrying min-width:0 for exactly
-   this). The # and Team member columns are sticky, so a scrolled row is still
-   identifiable. That is 92px better than the 1445px the columns needed while they held
-   full names: on a 1600px window with the sidebar open the grid still scrolls, by ~55px
-   rather than ~147px, and collapsing the sidebar to its 66px rail removes the scroll
-   entirely. Two extra columns beside seven status columns do not fit at 1600px however
-   they are set; scrolling is the honest way to say so. */
+   So the grid is 1445px wide at minimum and scrolls sideways under that, inside
+   .table-scroll (already overflow:auto, with .shell-main already carrying min-width:0
+   for exactly this). The # and Team member columns are sticky, so a scrolled row is
+   still identifiable. Collapsing the sidebar to its 66px rail recovers 178px and, on a
+   1600px window, removes the scroll entirely. Two name columns simply do not fit beside
+   seven status columns at 1600px; scrolling is the honest way to say so. */
 .matrix {
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;
-  min-width: 1353px;
+  min-width: 1445px;
   table-layout: fixed;
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;

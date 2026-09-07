@@ -364,20 +364,13 @@ async function getReconciliation(pool, year) {
 
 /** Everything one dashboard render needs, in a single round trip. */
 async function getYearReport(pool, year) {
-  const [statuses, members, totals, assignedStatusTotals, authorities, reconciliation] =
-    await Promise.all([
-      getStatusCatalog(pool),
-      getMatrix(pool, year),
-      getStatusTotals(pool, year),
-      getAssignedStatusTotals(pool, year),
-      getAuthorities(pool, year),
-      getReconciliation(pool, year)
-    ]);
-
-  // Attached here rather than inside getMatrix so the matrix query keeps doing one thing.
-  // A member with no case at either stage this year gets the empty pair, not undefined —
-  // the client must not have to distinguish "no authority yet" from "field missing".
-  members.forEach(m => { m.authorities = authorities.members[m.etmId] || NO_AUTHORITY; });
+  const [statuses, members, totals, assignedStatusTotals, reconciliation] = await Promise.all([
+    getStatusCatalog(pool),
+    getMatrix(pool, year),
+    getStatusTotals(pool, year),
+    getAssignedStatusTotals(pool, year),
+    getReconciliation(pool, year)
+  ]);
 
   const rowSum = members.reduce((s, m) => s + m.total, 0);
 
@@ -388,9 +381,6 @@ async function getYearReport(pool, year) {
     terminalStatuses: TERMINAL_STATUSES,
     statusTotals: totals,
     assignedStatusTotals,
-    // The Grand Total row's own pair: every real-person-assigned case for the year, which
-    // is exactly the union of the member rows, since each case has one handler.
-    assignedAuthorities: authorities.overall,
     members,
     reconciliation: { ...reconciliation, memberRowSum: rowSum }
   };
@@ -726,7 +716,6 @@ module.exports = {
   getStatusTotals,
   getAssignedStatusTotals,
   getMatrix,
-  getAuthorities,
   getReconciliation,
   getYearReport,
   getYearTrend,
