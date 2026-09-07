@@ -115,11 +115,17 @@ window.EduConXlsx = (() => {
    * Style ids, matching the order of <cellXfs> in STYLES_XML below:
    * 0 default · 1 title · 2 info strip · 3 column header · 4 text · 5 number ·
    * 6 team band · 7 subtotal label · 8 subtotal number · 9 grand label · 10 grand number ·
-   * 11 note · 12 note key
+   * 11 note · 12 note key · 13 money · 14 money total
+   *
+   * `money` and `moneyGrand` carry numFmt 164 — a ₹ amount in Indian digit grouping. The
+   * value in the cell is still a plain number, so Excel sums it; only its display is
+   * formatted. Appending them at the end is deliberate: an id inserted in the middle would
+   * silently restyle every existing call site.
    */
   const S = {
     def: 0, title: 1, info: 2, head: 3, txt: 4, num: 5,
-    sect: 6, totL: 7, tot: 8, grandL: 9, grand: 10, note: 11, noteKey: 12
+    sect: 6, totL: 7, tot: 8, grandL: 9, grand: 10, note: 11, noteKey: 12,
+    money: 13, moneyGrand: 14
   };
 
   /** A cell: numbers stay numeric so Excel can sum them; text goes inline. */
@@ -169,6 +175,9 @@ window.EduConXlsx = (() => {
 
   const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="1">
+ <numFmt numFmtId="164" formatCode="&quot;₹&quot;#,##,##0;-&quot;₹&quot;#,##,##0"/>
+</numFmts>
 <fonts count="6">
  <font><sz val="11"/><name val="Calibri"/></font>
  <font><b/><sz val="16"/><color rgb="FF1F5FAE"/><name val="Calibri"/></font>
@@ -196,7 +205,7 @@ window.EduConXlsx = (() => {
  </border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="13">
+<cellXfs count="15">
  <xf xfId="0" numFmtId="0" fontId="0" fillId="0" borderId="0"/>
  <xf xfId="0" numFmtId="0" fontId="1" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
  <xf xfId="0" numFmtId="0" fontId="2" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
@@ -210,6 +219,8 @@ window.EduConXlsx = (() => {
  <xf xfId="0" numFmtId="0" fontId="3" fillId="5" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
  <xf xfId="0" numFmtId="0" fontId="2" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="top" wrapText="1"/></xf>
  <xf xfId="0" numFmtId="0" fontId="5" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
+ <xf xfId="0" numFmtId="164" fontId="0" fillId="0" borderId="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="164" fontId="3" fillId="5" borderId="1" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;

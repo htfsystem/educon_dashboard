@@ -8,6 +8,15 @@
  *
  * Read-only, like the rest of the dashboard: every request here is a GET.
  *
+ * THE MONEY IS IN THE LIST (2026-09-07)
+ * Sanctioned, Disbursed and Pending disbursement are columns of the dialog's list, with a
+ * totals row under them that sums whatever the filters have left on screen. The question
+ * asked of every one of these lists was "how much", and answering it one student at a time
+ * — a click each, and add them up yourself — was the wrong shape of answer. The figures are
+ * the same ones card 2 shows, for the year the list is being read at, so a row and that
+ * student's own card cannot disagree. They reach only a role holding `view:finance`: a
+ * viewer's payload carries no amounts and the three columns are not drawn.
+ *
  * WHY THE TWO VIEWS SHOW DIFFERENT COLUMNS
  * The hover preview has to fit beside the number it explains, so it stays at five
  * columns and answers "who". The dialog is where the question becomes "who, and what
@@ -121,6 +130,55 @@
 
   const prof = s => (s && s.profile) || {};
 
+  /* ---------- The three money columns ----------
+   *
+   * Added 2026-09-07, at the user's request: a cell answered "who", and the next question
+   * asked of every one of those lists was "how much". The figures are the same ones the
+   * student card has always shown — same sanction MAX, same de-duplicated payment sum, the
+   * same signed pending — for the academic year the list is being read at, so a row here
+   * and that student's own card cannot disagree.
+   *
+   * `money` marks a column for three things at once: the totals row sums it, the export
+   * writes it as a number Excel can add up rather than as text, and `columnsFor` drops it
+   * for a role without `view:finance` (whose payload carries no `money` object anyway).
+   */
+  const MONEY_KEYS = ['sanctioned', 'disbursed', 'pending'];
+
+  /** One amount, or null when this payload carries no amounts at all (a viewer's). */
+  const amount = (s, key) => (s && s.money ? Number(s.money[key]) || 0 : null);
+
+  /**
+   * A money cell.
+   *
+   * The value is carried twice on purpose: as `data-amount`, the exact number the totals
+   * row and the export read, and as the rendered ₹ string, which is what filters.js
+   * filters on and what the reader compares. Deriving the total by re-parsing the text
+   * would work today and break the first time the format changes.
+   */
+  const moneyCol = (key, label) => ({
+    key,
+    label,
+    cls: 'dt-money',
+    // A numeric floor, not a search box: the question asked of these columns is "who is
+    // owed more than X", never "whose sanction contains the digits 5000".
+    filter: 'min',
+    money: true,
+    text: s => (amount(s, key) === null ? null : money(amount(s, key))),
+    attrs: s => (amount(s, key) === null ? ''
+      : ` data-money="${key}" data-amount="${amount(s, key)}"`),
+    html: s => {
+      const n = amount(s, key);
+      if (n === null) return BLANK;
+      // A negative pending is not an error and is not clamped: the student has been paid
+      // more this year than the year's sanction row records — usually because no sanction
+      // row was ever written. Card 2 relabels it; a column has no room for a second label,
+      // so it is marked instead and the title says what it means.
+      return n < 0
+        ? `<span class="is-over" title="Disbursed beyond sanction">${esc(money(n))}</span>`
+        : esc(money(n));
+    }
+  });
+
   const LIST_COLUMNS = [
     { key: 'sr',      label: 'Sr. No',         cls: 'dt-sr',      filter: null,
       text: (s, i) => String(i + 1) },
@@ -133,6 +191,12 @@
       text: s => s.name },
     { key: 'status',  label: 'Current status', cls: 'dt-status',  filter: 'select',
       text: s => s.status, html: s => statusTag(s.status) },
+    // The money sits directly behind the status rather than at the far right of the
+    // table: with nineteen columns the right-hand end is two screens of horizontal scroll
+    // away, and these three are the reason the list was opened.
+    moneyCol('sanctioned', 'Sanctioned'),
+    moneyCol('disbursed',  'Disbursed'),
+    moneyCol('pending',    'Pending disbursement'),
     { key: 'handler', label: 'ETM / ATM',      cls: 'dt-handler', filter: 'select',
       text: s => (s.handler ? s.handler.name : ''),
       html: s => (s.handler
@@ -181,11 +245,18 @@
    * The handler column earns its place only when the rows disagree about the handler —
    * true for the Grand Total row, false for a member's own cell, where it would repeat
    * one name down the whole table.
+   *
+   * The money columns earn theirs from the payload: the server only sends amounts to a
+   * role holding `view:finance`, so a viewer's rows have no `money` object and the three
+   * columns are not drawn. Both halves are checked rather than only the permission — a
+   * column of em dashes where the amounts should be is worse than no column.
    */
   function columnsFor(students, keys) {
     const handlers = new Set(students.map(s => (s.handler ? s.handler.loginId : '')));
+    const hasMoney = can('view:finance') && students.some(s => s.money);
     return LIST_COLUMNS.filter(c => {
       if (keys && !keys.includes(c.key)) return false;
+      if (c.money) return hasMoney;
       if (c.key === 'handler') return handlers.size > 1;
       return true;
     });
@@ -236,8 +307,11 @@
    *
    * `sortDir` undefined means "no sorting controls at all" — that is the hover preview,
    * which is a glance at a number rather than a table to work in.
+   *
+   * `totals` adds the summing row under the money columns. It is off in the preview for
+   * the same reason sorting is: a glance beside a number does not need a ledger foot.
    */
-  function listTable(students, { clickable, keys, id, sortDir }) {
+  function listTable(students, { clickable, keys, id, sortDir, totals }) {
     if (!students.length) {
       return '<p class="drill-empty">No students in this cell.</p>';
     }
@@ -263,15 +337,73 @@
       <tr${clickable ? ` tabindex="0" role="button" data-student="${s.studentId}"` : ''}>
         ${cols.map(c => {
           const raw = c.text(s, i);
-          return `<td class="${c.cls}">${c.html ? c.html(s, i) : esc(val(raw))}</td>`;
+          return `<td class="${c.cls}"${c.attrs ? c.attrs(s, i) : ''}>${
+            c.html ? c.html(s, i) : esc(val(raw))}</td>`;
         }).join('')}
       </tr>`).join('');
+
+    /* The totals row.
+     *
+     * Written empty and filled by updateTotals() from the rendered cells, never from the
+     * payload — the whole point of it is to total what is on screen, and the filters hide
+     * rows without telling this function. One code path therefore serves the unfiltered
+     * list and every filtered view of it.
+     *
+     * The label spans everything to the left of the first money column, so "Total" sits
+     * under the students it is totalling rather than floating in column one. */
+    const firstMoney = cols.findIndex(c => c.money);
+    const foot = (totals && firstMoney !== -1) ? `<tfoot><tr>
+        <td class="dt-total-label" colspan="${firstMoney}">Total<span class="dt-total-note"></span></td>
+        ${cols.slice(firstMoney).map(c => `<td class="${c.cls}${c.money ? ' dt-total' : ''}"${
+          c.money ? ` data-money="${c.key}"` : ''}></td>`).join('')}
+      </tr></tfoot>` : '';
 
     return `<table class="drill-table${clickable ? ' is-clickable' : ''}"${
       id ? ` id="${id}"` : ''}>
       <thead><tr>${head}</tr></thead>
       <tbody>${body}</tbody>
+      ${foot}
     </table>`;
+  }
+
+  /**
+   * Total the money columns over the rows currently visible.
+   *
+   * Read out of the DOM rather than out of `listStudents`, because "currently visible" is
+   * a fact only the DOM knows: filters.js hides rows by setting `row.hidden` and reports a
+   * count, not a set. Summing `data-amount` — the exact number, not the ₹ string beside
+   * it — is what keeps the total honest as the format changes.
+   */
+  function updateTotals() {
+    const table = $('drillListTable');
+    if (!table || !table.tFoot) return;
+
+    const all = [...(table.tBodies[0]?.rows || [])];
+    const rows = all.filter(r => !r.hidden);
+
+    MONEY_KEYS.forEach(key => {
+      const cell = table.tFoot.querySelector(`[data-money="${key}"]`);
+      if (!cell) return;
+      const sum = rows.reduce((n, tr) => {
+        const td = tr.querySelector(`[data-money="${key}"]`);
+        return n + (td ? Number(td.dataset.amount) || 0 : 0);
+      }, 0);
+      cell.dataset.amount = String(sum);
+      cell.textContent = money(sum);
+      // Same mark the cells above it carry, for the same reason: a negative total means
+      // this set of students has been paid more than their sanction rows record.
+      cell.classList.toggle('is-over', key === 'pending' && sum < 0);
+      cell.title = key === 'pending' && sum < 0 ? 'Disbursed beyond sanction' : '';
+    });
+
+    // The row says what it totalled. A "Total" under a filtered list with no count beside
+    // it is exactly the figure that gets quoted later as the cell's total.
+    const note = table.tFoot.querySelector('.dt-total-note');
+    if (note) {
+      note.textContent = rows.length === all.length
+        ? ` · ${all.length} student${all.length === 1 ? '' : 's'}`
+        : ` · ${rows.length} of ${all.length} students`;
+    }
   }
 
   /* The drill list's filter identity. The export reads the active filters under it and
@@ -452,7 +584,7 @@
     const clickable = can('view:finance');
 
     listBody.innerHTML = listTable(students, {
-      clickable, id: 'drillListTable', sortDir: listSortDir
+      clickable, id: 'drillListTable', sortDir: listSortDir, totals: true
     });
 
     listShown = null;
@@ -466,9 +598,14 @@
       window.EduConFilters.mount(table, filterSpec(students, null, shown => {
         listShown = shown;
         listFoot.textContent = listFootText();
+        updateTotals();
         syncExportButton(true);
       }));
     }
+    // mount() applies the filters and so fires that callback, but only when the spec has
+    // filterable columns. Called again here so the totals are right either way, and it is
+    // idempotent — it recomputes from the cells rather than accumulating.
+    updateTotals();
     syncExportButton(true);
 
     // The header button is a new node after every render, so the listener is bound here
@@ -629,16 +766,47 @@
             .map(n => (n.nodeType === 3 ? n.nodeValue : n.textContent))
             .join(' ').replace(/\s+/g, ' ').trim();
           if (ci === 0) return { v: i + 1, s: S.num };
+          // A money cell goes out as the number behind it, in a ₹ format, never as the
+          // rendered string: a column of text is one Excel cannot sum, and the first thing
+          // anyone does with this sheet is total a filtered set of students.
+          if (td.dataset.amount !== undefined) {
+            return { v: Number(td.dataset.amount), s: S.money };
+          }
           return { v: text, s: S.txt };
         })
       });
     });
+
+    /* The totals row, summed over the rows actually written above.
+     *
+     * Built from `bodyRows` rather than copied out of the <tfoot>, because the foot's
+     * label cell spans several columns and its cell indices therefore do not line up with
+     * the header. Which column is which is read off the first data row's `data-money`. */
+    const moneyIndex = {};
+    [...bodyRows[0].cells].forEach((td, i) => {
+      if (td.dataset.money) moneyIndex[td.dataset.money] = i;
+    });
+
+    const moneyCols = Object.keys(moneyIndex);
+    if (moneyCols.length) {
+      const totalCells = headers.map(() => ({ v: '', s: S.grandL }));
+      totalCells[0] = { v: 'Total', s: S.grandL };
+      moneyCols.forEach(key => {
+        const i = moneyIndex[key];
+        const sum = bodyRows.reduce((n, tr) =>
+          n + (Number(tr.cells[i]?.dataset.amount) || 0), 0);
+        totalCells[i] = { v: sum, s: S.moneyGrand };
+      });
+      rows.push({ cells: totalCells, height: 20 });
+    }
 
     // Sized by what the column holds: identifiers and tags stay narrow, the prose columns
     // (college, specialization, university) get the room they need.
     const width = h => {
       const key = h.toLowerCase();
       if (key.startsWith('sr')) return 6;
+      // Wide enough for "Pending disbursement" over a seven-figure ₹ amount.
+      if (key.includes('sanction') || key.includes('disburse')) return 17;
       if (key.includes('college') && !key.includes('city')) return 34;
       if (key.includes('specialization') || key.includes('university')) return 30;
       if (key.includes('status') || key.includes('student') || key.includes('etm')) return 24;

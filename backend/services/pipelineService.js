@@ -220,6 +220,117 @@ async function getAssignedStatusTotals(pool, year) {
 }
 
 /**
+ * APPROVAL / SANCTION AUTHORITY — who signs off the cases a member is carrying.
+ *
+ * WHICH SOURCE, AND WHY. educon_prod holds the answer twice and the two disagree, so
+ * this is a decision, not a lookup (verified 2026-09-07):
+ *
+ *   The *planned* authority — educon_user_profile.first_level_auth / sanctioning_auth,
+ *   set on the STUDENT's profile row. Rejected. It agrees with what actually happened on
+ *   only 442 of 736 decided cases for approval and 383 for sanction, and read off a
+ *   handler's own profile row it is meaningless: all 30 roster members carry 300
+ *   (Amit Educon) in every one of the three auth columns. Read off their students it
+ *   splits a single member between two sanctioning authorities on 15 of 30 rows in
+ *   2025-2026, so it cannot even fill one cell.
+ *
+ *   The *actual* authority — recorded on the case itself, which is what this uses:
+ *     Approval  educon_student_first_level_approval.approval_id            (750 rows /
+ *               750 distinct s_id, so one row per CASE and no fan-out; never NULL or '')
+ *     Sanction  educon_student_final_approval_and_sanction
+ *                 .sanctioning_authority_id                                (739 rows /
+ *               723 (s_id, academic_year) keys — the same 14 re-saved duplicates the
+ *               sanction *amount* carries. SELECT DISTINCT collapses them; verified that
+ *               no duplicated key differs on the authority, so nothing is lost.)
+ *
+ * Both columns hold a login_id, not a numeric id. login_id is unique across all 462
+ * educon_user_profile rows and never NULL, so joining on it fans nothing out, and every
+ * code present resolves to a real person — only four ever appear as an approver
+ * (dd 710, ss 37, sss 2, ks 1) and three as a sanctioner (ks 706, dd 20, mp 13).
+ *
+ * SHAPE. An authority is a fact about a case, not about a member, so a member row can
+ * legitimately name more than one — and does: 6 of 24 members in 2022-2023 for approval,
+ * 7 of 26 in 2026-2027 for sanction. The set is returned in full, commonest first, and
+ * the client shows the leader with a "+N". An empty array means no case of theirs has
+ * reached that stage this year, which the client prints as an em dash rather than as a
+ * name it does not have.
+ *
+ * The counts are over every case the member holds for the year, including the statuses
+ * the 7 reported columns exclude, so they are deliberately not comparable with the Total
+ * column — the client's tooltip says "cases", never "of total".
+ */
+async function getAuthorities(pool, year) {
+  const [rows] = await pool.query(`
+    SELECT
+      pick.ownerId               AS etmId,
+      fl.approval_id             AS approvalCode,
+      ap.u_fname AS ap_fname, ap.u_lname AS ap_lname,
+      san.sanctioning_authority_id AS sanctionCode,
+      sn.u_fname AS sn_fname, sn.u_lname AS sn_lname,
+      COUNT(*) AS cases
+    FROM (
+      SELECT
+        a.s_id          AS caseId,
+        a.academic_year AS academicYear,
+        ${OWNER_PICK}   AS ownerId
+      FROM educon_user_academic_details a
+      WHERE a.academic_year = ?
+    ) pick
+    LEFT JOIN educon_student_first_level_approval fl ON fl.s_id = pick.caseId
+    LEFT JOIN (
+      SELECT DISTINCT s_id, academic_year, sanctioning_authority_id
+        FROM educon_student_final_approval_and_sanction
+    ) san ON san.s_id = pick.caseId AND san.academic_year = pick.academicYear
+    LEFT JOIN educon_user_profile ap ON ap.login_id = fl.approval_id
+    LEFT JOIN educon_user_profile sn ON sn.login_id = san.sanctioning_authority_id
+    WHERE pick.ownerId IS NOT NULL
+    GROUP BY pick.ownerId,
+             fl.approval_id, ap.u_fname, ap.u_lname,
+             san.sanctioning_authority_id, sn.u_fname, sn.u_lname
+  `, [...PSEUDO_USERS, year]);
+
+  const byMember = new Map();
+  const overall = { approval: new Map(), sanction: new Map() };
+
+  // A code with no profile row falls through to itself rather than to a guess — the same
+  // rule codeLabels.js follows. It does not happen today; it must not become a fabrication
+  // if EduCon adds an approver tomorrow.
+  const tally = (bucket, code, fname, lname, n) => {
+    if (!code) return;                            // case not yet at this stage
+    const seen = bucket.get(code);
+    if (seen) { seen.cases += n; return; }
+    bucket.set(code, {
+      loginId: code,
+      name: displayName({ u_fname: fname, u_lname: lname, login_id: code }),
+      cases: n
+    });
+  };
+
+  for (const r of rows) {
+    const n = Number(r.cases);
+    if (!byMember.has(r.etmId)) {
+      byMember.set(r.etmId, { approval: new Map(), sanction: new Map() });
+    }
+    const m = byMember.get(r.etmId);
+    tally(m.approval, r.approvalCode, r.ap_fname, r.ap_lname, n);
+    tally(m.sanction, r.sanctionCode, r.sn_fname, r.sn_lname, n);
+    tally(overall.approval, r.approvalCode, r.ap_fname, r.ap_lname, n);
+    tally(overall.sanction, r.sanctionCode, r.sn_fname, r.sn_lname, n);
+  }
+
+  // Commonest first, then by name, so the leader the client shows is stable across
+  // renders and a tie never reshuffles between two refreshes.
+  const rank = bucket => [...bucket.values()]
+    .sort((a, b) => b.cases - a.cases || a.name.localeCompare(b.name));
+  const pack = pair => ({ approval: rank(pair.approval), sanction: rank(pair.sanction) });
+
+  const members = {};
+  for (const [etmId, pair] of byMember) members[etmId] = pack(pair);
+  return { members, overall: pack(overall) };
+}
+
+const NO_AUTHORITY = { approval: [], sanction: [] };
+
+/**
  * Cross-checks so the UI can prove its own numbers rather than asking to be trusted.
  * Each student is attributed to a single handler, so `memberRowSum` must now equal
  * `assignedDistinct` exactly — if it does not, `getMatrix` has regressed to counting
@@ -253,13 +364,20 @@ async function getReconciliation(pool, year) {
 
 /** Everything one dashboard render needs, in a single round trip. */
 async function getYearReport(pool, year) {
-  const [statuses, members, totals, assignedStatusTotals, reconciliation] = await Promise.all([
-    getStatusCatalog(pool),
-    getMatrix(pool, year),
-    getStatusTotals(pool, year),
-    getAssignedStatusTotals(pool, year),
-    getReconciliation(pool, year)
-  ]);
+  const [statuses, members, totals, assignedStatusTotals, authorities, reconciliation] =
+    await Promise.all([
+      getStatusCatalog(pool),
+      getMatrix(pool, year),
+      getStatusTotals(pool, year),
+      getAssignedStatusTotals(pool, year),
+      getAuthorities(pool, year),
+      getReconciliation(pool, year)
+    ]);
+
+  // Attached here rather than inside getMatrix so the matrix query keeps doing one thing.
+  // A member with no case at either stage this year gets the empty pair, not undefined —
+  // the client must not have to distinguish "no authority yet" from "field missing".
+  members.forEach(m => { m.authorities = authorities.members[m.etmId] || NO_AUTHORITY; });
 
   const rowSum = members.reduce((s, m) => s + m.total, 0);
 
@@ -270,6 +388,9 @@ async function getYearReport(pool, year) {
     terminalStatuses: TERMINAL_STATUSES,
     statusTotals: totals,
     assignedStatusTotals,
+    // The Grand Total row's own pair: every real-person-assigned case for the year, which
+    // is exactly the union of the member rows, since each case has one handler.
+    assignedAuthorities: authorities.overall,
     members,
     reconciliation: { ...reconciliation, memberRowSum: rowSum }
   };
@@ -406,8 +527,15 @@ function studentName(row) {
  * `statuses` is the exact DB status list behind the clicked column, sent by the client
  * from js/columns.js. Keeping it client-side is what stops the column definitions from
  * being duplicated on the server and drifting.
+ *
+ * `withMoney` adds the case-year's sanctioned / disbursed / pending figures to every row.
+ * It is set from the caller's `view:finance` permission, not from a query parameter: a
+ * viewer may open the list behind a cell but not the amounts in it, exactly as they may
+ * not open one student's amounts (see /api/students/:id). The two subqueries are the same
+ * ones getStudentDetail uses — MAX for the sanction, a sum over DISTINCT_PAYMENTS for the
+ * disbursement — so a student's row in this list and their own card cannot disagree.
  */
-async function getStudentList(pool, { year, etmId = null, statuses = [] }) {
+async function getStudentList(pool, { year, etmId = null, statuses = [], withMoney = false }) {
   if (!statuses.length) return [];
 
   const statusList = statuses.map(() => '?').join(',');
@@ -417,6 +545,19 @@ async function getStudentList(pool, { year, etmId = null, statuses = [] }) {
   // the SELECT list and so binds first, then the year, then the statuses, then the owner.
   const params = [...PSEUDO_USERS, year, ...statuses];
   if (etmId !== null) params.push(etmId);
+
+  /* Correlated against `pick`, and deliberately carrying NO placeholders of their own.
+     They sit in the outer SELECT list, which is textually ahead of the derived table that
+     binds PSEUDO_USERS and the year — a `?` here would take those parameters instead. The
+     year is therefore read off `pick.academicYear` rather than bound a second time. */
+  const moneyColumns = withMoney ? `,
+      COALESCE((SELECT MAX(f.amount_sanctioned)
+                  FROM educon_student_final_approval_and_sanction f
+                 WHERE f.s_id = pick.caseId
+                   AND f.academic_year = pick.academicYear), 0) AS sanctioned,
+      COALESCE((SELECT SUM(d.pt_amount_disbursed) FROM (${DISTINCT_PAYMENTS}) d
+                 WHERE d.s_id = pick.user_id
+                   AND d.pt_academic_year = pick.academicYear), 0) AS disbursed` : '';
 
   const [rows] = await pool.query(`
     SELECT
@@ -429,11 +570,12 @@ async function getStudentList(pool, { year, etmId = null, statuses = [] }) {
       h.login_id        AS handlerLogin,
       h.u_fname         AS h_fname,
       h.u_lname         AS h_lname,
-      ${PROFILE_COLUMNS}
+      ${PROFILE_COLUMNS}${moneyColumns}
     FROM (
       SELECT
         a.user_id,
         a.s_id                AS caseId,
+        a.academic_year       AS academicYear,
         a.application_status  AS status,
         ${OWNER_PICK}         AS ownerId
       FROM educon_user_academic_details a
@@ -448,21 +590,36 @@ async function getStudentList(pool, { year, etmId = null, statuses = [] }) {
   `, params);
 
   return rows
-    .map(r => ({
-      studentId: r.studentId,
-      caseId: r.caseId,
-      code: r.studentCode || String(r.studentId),
-      name: studentName(r),
-      status: r.status,
-      // Carried on every row, not only on the Grand Total: the same list is reachable
-      // from a member row too, and a column that appeared and vanished depending on
-      // which cell you came from would read as a bug. The client hides it when every
-      // row names the same handler, which is exactly the member-row case.
-      handler: r.handlerLogin
-        ? { loginId: r.handlerLogin, name: displayName({ u_fname: r.h_fname, u_lname: r.h_lname, login_id: r.handlerLogin }) }
-        : null,
-      profile: studentProfile(r)
-    }))
+    .map(r => {
+      const row = {
+        studentId: r.studentId,
+        caseId: r.caseId,
+        code: r.studentCode || String(r.studentId),
+        name: studentName(r),
+        status: r.status,
+        // Carried on every row, not only on the Grand Total: the same list is reachable
+        // from a member row too, and a column that appeared and vanished depending on
+        // which cell you came from would read as a bug. The client hides it when every
+        // row names the same handler, which is exactly the member-row case.
+        handler: r.handlerLogin
+          ? { loginId: r.handlerLogin, name: displayName({ u_fname: r.h_fname, u_lname: r.h_lname, login_id: r.handlerLogin }) }
+          : null,
+        profile: studentProfile(r)
+      };
+
+      if (withMoney) {
+        const sanctioned = Number(r.sanctioned);
+        const disbursed = Number(r.disbursed);
+        // Nested rather than flattened, so the client can tell "this payload carries no
+        // amounts" (a viewer) from "this student's amounts are zero" — the first hides
+        // the columns, the second prints three zeroes.
+        // Pending stays signed for the same reason it does on the student card: some
+        // students are paid more in a year than that year's sanction row records, and a
+        // column of clamped zeroes would hide it. The UI relabels rather than rounds.
+        row.money = { sanctioned, disbursed, pending: sanctioned - disbursed };
+      }
+      return row;
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -569,6 +726,7 @@ module.exports = {
   getStatusTotals,
   getAssignedStatusTotals,
   getMatrix,
+  getAuthorities,
   getReconciliation,
   getYearReport,
   getYearTrend,

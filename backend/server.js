@@ -180,6 +180,12 @@ app.get('/api/report', auth.requirePermission('view:summary'), route(async req =
  * matches nothing rather than erroring.
  *
  * Omit `etmId` for the Grand Total row — every student a real person handles.
+ *
+ * The sanctioned / disbursed / pending columns ride on this same payload, but only for a
+ * role that holds `view:finance`. That keeps one boundary in one place: a viewer sees who
+ * is in a cell, a manager sees what has been sanctioned and paid to them. It is decided
+ * here from the session rather than from a query parameter, so asking for the amounts is
+ * not a way to be given them.
  */
 app.get('/api/students', auth.requirePermission('view:summary'), route(async req => {
   const year = await requireYear(req);
@@ -196,8 +202,15 @@ app.get('/api/students', auth.requirePermission('view:summary'), route(async req
     : Number(req.query.etmId);
   if (etmId !== null && !Number.isInteger(etmId)) throw new Error('"etmId" must be a whole number');
 
-  const students = await pipeline.getStudentList(pool, { year, etmId, statuses });
-  return { academicYear: year, etmId, statuses, count: students.length, students };
+  const withMoney = !!req.user && req.user.permissions.includes('view:finance');
+
+  const students = await pipeline.getStudentList(pool, { year, etmId, statuses, withMoney });
+  return {
+    academicYear: year, etmId, statuses,
+    count: students.length,
+    includesAmounts: withMoney,
+    students
+  };
 }));
 
 /** One student's sanctioned / disbursed / pending figures, for every year they appear in. */

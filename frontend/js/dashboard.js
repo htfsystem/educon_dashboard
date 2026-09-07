@@ -21,6 +21,52 @@
 
   const colValue = window.colValue;
 
+  /* ---------- Approval auth / Sanction auth ----------
+   *
+   * Two attribute columns beside the team member, not two more counts:
+   *
+   *   Approval auth  the FIRST LEVEL APPROVER on that member's cases this year
+   *   Sanction auth  the FINAL APPROVER (the sanctioning authority) on them
+   *
+   * The headings keep the short names the summary page has always used; what they hold
+   * is the first-level approver and the final approver respectively. The server reads
+   * both off the case itself, never off the *planned* authority on the student's profile
+   * row — see getAuthorities() in pipelineService.js for why those two disagree.
+   *
+   * VALUES ARE SHORT FORMS — the login code, `dd` / `ks` / `mp`, not "Mr. Deepak Daga".
+   * That is what the business asked for, and it is the same code the member column
+   * already prints under every name, so nothing new has to be learned to read it. The
+   * full name, with the case count, is the cell's tooltip; the Excel export carries a
+   * code-to-name key on its Notes sheet, since a printed page has no tooltip.
+   *
+   * Because the codes are short, the cell lists EVERY authority rather than the
+   * commonest plus a "+N" badge: "ks, mp" is narrower than the column heading above it,
+   * so the badge bought nothing and cost the reader a hover. A member row can genuinely
+   * name more than one — 6 of 24 members in 2022-2023, 7 of 26 in 2026-2027.
+   *
+   * Those case counts are over every case the member holds for the year, INCLUDING the
+   * statuses the 7 reported columns exclude. They are therefore not comparable with the
+   * Total column, which is why the tooltip says "cases" and never "of N". */
+  const AUTH_COLS = {
+    approvalAuth: {
+      field: 'approval', label: 'Approval auth',
+      role: 'first level approver', stage: 'first-level approval'
+    },
+    sanctionAuth: {
+      field: 'sanction', label: 'Sanction auth',
+      role: 'final approver', stage: 'sanction'
+    }
+  };
+
+  const authList = (source, key) => (source?.authorities || source)?.[AUTH_COLS[key].field] || [];
+
+  /** The codes exactly as the cell prints them, which is what the column sorts on. */
+  const authCodes = (source, key) => authList(source, key).map(a => a.loginId).join(', ');
+
+  // Members with nobody recorded yet sort to the end ascending rather than leading the
+  // table with a block of em dashes — ￿ is past every real code.
+  const authSortKey = (m, key) => (authCodes(m, key) || '￿').toLowerCase();
+
   // Member totals count only the tracked columns above — closed / rejected / reached-
   // career-point and budget-pending cases are excluded from every ETM/ATM count.
   const memberTotal = m => COLUMNS.reduce((n, c) => n + colValue(c, m.statuses), 0);
@@ -309,6 +355,7 @@
       let av, bv;
       const col = COLUMNS.find(c => c.key === key);
       if (key === 'name') { av = a.name.toLowerCase(); bv = b.name.toLowerCase(); }
+      else if (AUTH_COLS[key]) { av = authSortKey(a, key); bv = authSortKey(b, key); }
       else if (key === 'total') { av = memberTotal(a); bv = memberTotal(b); }
       else if (col) { av = colValue(col, a.statuses); bv = colValue(col, b.statuses); }
       else { av = 0; bv = 0; }
@@ -437,6 +484,29 @@
     btn.textContent = state.hideEmpty ? 'Unhide empty rows' : 'Hide empty rows';
   }
 
+  /**
+   * One authority cell: the login codes of everyone who signed off at that stage, in
+   * order of how many of the member's cases each took. The tooltip expands them to full
+   * names with those counts, so the short form on screen never has to be guessed at.
+   *
+   * An em dash means no case of theirs has reached that stage this year — an absence,
+   * deliberately not a code, and never a guess at who it will be.
+   */
+  function authCell(source, key) {
+    const list = authList(source, key);
+    const { role, stage } = AUTH_COLS[key];
+    if (!list.length) {
+      return `<td class="col-auth auth-none" title="No case here has reached ${stage} in ${
+        escapeHtml(state.year)}">—</td>`;
+    }
+    const title = `${role.replace(/^./, c => c.toUpperCase())}\n` + list
+      .map(a => `${a.loginId} — ${a.name}, ${a.cases} case${a.cases === 1 ? '' : 's'}`)
+      .join('\n');
+    return `<td class="col-auth" title="${escapeHtml(title)}">` +
+      list.map(a => `<span class="auth-code">${escapeHtml(a.loginId)}</span>`).join(', ') +
+      '</td>';
+  }
+
   function renderMatrix() {
     const r = state.report;
     const rows = visibleMembers();
@@ -479,9 +549,16 @@
       ? `<svg class="ico sort-arrow${state.sortDir === 1 ? '' : ' is-desc'}" viewBox="0 0 24 24"` +
         ` aria-hidden="true"><use href="#icoCaret"/></svg>` : '';
 
+    // The two authority columns sit immediately after the member they describe and ahead
+    // of Total, so the row reads as one sentence — who, who signs their approvals, who
+    // signs their sanctions — before any figure.
     const head = `<thead><tr>
       <th class="col-sl">#</th>
       <th class="col-name" data-sort="name">Team member${arrow('name')}</th>
+      ${Object.entries(AUTH_COLS).map(([key, def]) =>
+        `<th class="col-auth" data-sort="${key}" title="The ${def.role} on this member's cases in ${
+          escapeHtml(state.year)}. Shown as login codes — hover a cell for the full names.">${
+          escapeHtml(def.label)}${arrow(key)}</th>`).join('')}
       <th class="col-total" data-sort="total">Total${arrow('total')}</th>
       ${COLUMNS.map(c =>
         `<th data-sort="${c.key}" title="${escapeHtml(c.statuses.join(', '))}">${escapeHtml(c.label)}${arrow(c.key)}</th>`).join('')}
@@ -494,7 +571,8 @@
     rows.forEach(m => {
       if (m.team !== lastTeam) {
         lastTeam = m.team;
-        body += `<tr class="section-row"><td colspan="${COLUMNS.length + 3}">${
+        // Five fixed columns now: #, Team member, Approval auth, Sanction auth, Total.
+        body += `<tr class="section-row"><td colspan="${COLUMNS.length + 5}">${
           m.team === 'ETM' ? 'Educon Team Members (ETM)' : 'Alumni Team Members (ATM)'}</td></tr>`;
         sl = 0;
       }
@@ -507,6 +585,7 @@
       body += `<tr class="${rowMoved ? 'row-changed' : ''}" data-who="${escapeHtml(`${m.name} (${m.loginId})`)}">
         <td class="col-sl">${sl}</td>
         <td class="col-name"><span class="member-name">${escapeHtml(m.name)}</span><span class="member-code">${escapeHtml(m.loginId)}</span></td>
+        ${Object.keys(AUTH_COLS).map(key => authCell(m, key)).join('')}
         ${total
           ? `<td${drill('__TOTAL__', m.etmId, 'col-total')}>${total}</td>`
           : `<td class="col-total cell-zero${zeroFlash(m.etmId, '__TOTAL__')}">0</td>`}
@@ -527,6 +606,12 @@
       <tr class="total-row" data-who="All team members">
         <td class="col-sl"></td>
         <td class="col-name">Grand Total</td>
+        ${/* Deliberately EMPTY, at the user's request (2026-09-07). Every other cell on
+              this row is an addition of the rows above it; an approver is not. Printing
+              "dd" against the Grand Total invited it to be read as "the whole cohort was
+              approved by dd", which is a different and much stronger claim than the
+              member rows make. The per-member cells carry the answer. */
+          Object.keys(AUTH_COLS).map(() => '<td class="col-auth"></td>').join('')}
         ${cohort
           ? `<td${drill('__TOTAL__', null, 'col-total')}>${cohort}</td>`
           : `<td class="col-total cell-zero${zeroFlash(null, '__TOTAL__')}">0</td>`}
@@ -561,7 +646,11 @@
       th.addEventListener('click', () => {
         const key = th.dataset.sort;
         if (state.sortKey === key) state.sortDir *= -1;
-        else { state.sortKey = key; state.sortDir = key === 'name' ? 1 : -1; }
+        else {
+          state.sortKey = key;
+          // Names open A→Z; counts open with the largest first.
+          state.sortDir = (key === 'name' || AUTH_COLS[key]) ? 1 : -1;
+        }
         renderMatrix();
       });
     });
@@ -581,9 +670,38 @@
     const rows = visibleMembers();
     const cohort = trackedTotal(r);
 
-    // Column order matches the on-screen matrix exactly: Total sits beside the name,
-    // ahead of the nine status columns, so the headline number is read first.
-    const headers = ['Sl', 'Name of the ETM/ATM', 'Code', 'Total', ...COLUMNS.map(c => c.label)];
+    /* Column order matches the on-screen matrix exactly: the two authority columns
+       describe the member and so follow their name, then Total, then the status columns.
+       The heading says which approver each one is, because the sheet is read away from
+       the dashboard where the on-screen heading has a tooltip to explain itself. */
+    const headers = [
+      'Sl', 'Name of the ETM/ATM', 'Code',
+      'Approval auth (first level approver)', 'Sanction auth (final approver)',
+      'Total', ...COLUMNS.map(c => c.label)
+    ];
+
+    /* Login codes, exactly as the screen shows them, with the case count added when the
+       member's cases were split between two approvers. Codes rather than names is the
+       business's own call; what a printed page cannot do is hover, so the Notes sheet
+       carries a code-to-name key built from whoever actually appears in this workbook.
+       Same rule for the absence: an em dash, never a guessed name. */
+    const authText = (source, key) => {
+      const list = authList(source, key);
+      if (!list.length) return '—';
+      return list.length === 1
+        ? list[0].loginId
+        : list.map(a => `${a.loginId} (${a.cases})`).join(', ');
+    };
+    const authCells = source =>
+      Object.keys(AUTH_COLS).map(key => ({ v: authText(source, key), s: S.txt }));
+
+    // Every approver named anywhere in this workbook, for the key on sheet 2. Built from
+    // the member rows alone — the Grand Total row leaves both cells empty, as on screen —
+    // so the key can never list somebody the sheet does not mention, or omit somebody it does.
+    const approvers = new Map();
+    rows.forEach(src =>
+      Object.keys(AUTH_COLS).forEach(key =>
+        authList(src, key).forEach(a => approvers.set(a.loginId, a.name))));
     const NCOL = headers.length;
     const last = colLetter(NCOL - 1);
 
@@ -641,11 +759,16 @@
 
     const teamLabel = t => t === 'ETM' ? 'Educon Team Members (ETM)' : 'Alumni Team Members (ATM)';
 
-    /** A subtotal closes each team block, so ETM vs ATM load is readable without re-adding. */
+    /* A subtotal closes each team block, so ETM vs ATM load is readable without re-adding.
+       Its two authority cells are left EMPTY: a subtotal is an addition, and "the ETM
+       block's approval authority" is not something that adds up. The label still spans
+       A:C only, matching the Grand Total row below it — merging it across the authority
+       columns instead would make the two total rows different shapes. */
     const pushSubtotal = (team, group) => {
       sheet.push({
         cells: [
-          { v: `${teamLabel(team)} — subtotal`, s: S.totL }, { v: '', s: S.totL }, { v: '', s: S.totL },
+          { v: `${teamLabel(team)} — subtotal`, s: S.totL },
+          ...Array.from({ length: 4 }, () => ({ v: '', s: S.totL })),
           { v: group.reduce((n, m) => n + memberTotal(m), 0), s: S.tot },
           ...COLUMNS.map(c => ({ v: group.reduce((n, m) => n + colValue(c, m.statuses), 0), s: S.tot }))
         ]
@@ -669,6 +792,7 @@
       sheet.push({
         cells: [
           { v: sl, s: S.num }, { v: m.name, s: S.txt }, { v: m.loginId, s: S.txt },
+          ...authCells(m),
           { v: memberTotal(m), s: S.tot },
           ...COLUMNS.map(c => ({ v: colValue(c, m.statuses), s: S.num }))
         ]
@@ -685,6 +809,9 @@
       cells: [
         { v: applied.length ? 'Grand Total (all members)' : 'Grand Total', s: S.grandL },
         { v: '', s: S.grandL }, { v: '', s: S.grandL },
+        // Both authority cells empty, exactly as on screen and as the team subtotals
+        // above: every other figure on this row is an addition, and an approver is not.
+        { v: '', s: S.grandL }, { v: '', s: S.grandL },
         { v: cohort, s: S.grand },
         ...COLUMNS.map(c => ({ v: colAssignedTotal(c, r), s: S.grand }))
       ]
@@ -692,7 +819,12 @@
     merges.push(`A${sheet.length}:C${sheet.length}`);
 
     // Wide enough that every header label wraps to at most two lines and stays readable.
-    const cols = [{ w: 5 }, { w: 32 }, { w: 10 }, { w: 9 }, ...COLUMNS.map(() => ({ w: 15 }))];
+    // The authority columns hold login codes now, not names — "ks (5), mp (2)" is the
+    // widest they ever get — so 16 replaces the 26 the full names needed.
+    const cols = [
+      { w: 5 }, { w: 32 }, { w: 10 }, { w: 16 }, { w: 16 }, { w: 9 },
+      ...COLUMNS.map(() => ({ w: 15 }))
+    ];
 
     // Sheet 2 — the column definitions only: which exact database statuses sit behind
     // each dashboard column. The reconciliation figures live on the dashboard, not here.
@@ -701,6 +833,36 @@
     notes.push({ cells: [{ v: 'Column definitions — exact database statuses', s: S.title }], height: 24 });
     notes.push({ cells: [{ v: 'Dashboard column', s: S.head }, { v: 'Exact application_status value(s)', s: S.head }] });
     COLUMNS.forEach(c => notes.push({ cells: [{ v: c.label, s: S.txt }, { v: c.statuses.join(', '), s: S.txt }] }));
+
+    /* The two authority columns are not statuses, so they get their own block rather than
+       a row in a table headed "application_status". Worth the space: a reader outside the
+       team sees a name against a member and has to know it is whoever actually signed
+       those cases off, not a supervisor the member reports to. */
+    notes.push({ cells: [] });
+    notes.push({ cells: [{ v: 'Column', s: S.head }, { v: 'Where the name comes from', s: S.head }] });
+    notes.push({ cells: [
+      { v: 'Approval auth', s: S.txt },
+      { v: 'The FIRST LEVEL APPROVER recorded on that member’s cases for this academic '
+         + 'year, shown as a login code — see the key below. Two codes mean their cases '
+         + 'were split between approvers, and the figure in brackets is how many each '
+         + 'signed. An em dash means no case of theirs has reached first-level approval '
+         + 'yet.', s: S.txt }
+    ] });
+    notes.push({ cells: [
+      { v: 'Sanction auth', s: S.txt },
+      { v: 'The FINAL APPROVER — the sanctioning authority — recorded on that member’s '
+         + 'cases for this academic year, read the same way. The case counts cover every '
+         + 'case the member holds for the year, including the statuses the columns above '
+         + 'exclude, so they are not comparable with the Total column.', s: S.txt }
+    ] });
+
+    /* The key. On screen a code expands on hover; on paper it cannot, so a sheet of
+       "dd" and "ks" would be unreadable to anyone outside the team without this. */
+    notes.push({ cells: [] });
+    notes.push({ cells: [{ v: 'Code', s: S.head }, { v: 'Approver named in this sheet', s: S.head }] });
+    [...approvers.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .forEach(([code, name]) => notes.push({ cells: [{ v: code, s: S.txt }, { v: name, s: S.txt }] }));
 
     X.save([
       { name: 'Status Summary', rows: sheet, merges, cols, freezeRow: HEAD_ROW },
