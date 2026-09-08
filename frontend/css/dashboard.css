@@ -977,8 +977,13 @@ tr.filter-row th {
   font-variant-numeric: tabular-nums;
 }
 
+/* 7px of horizontal padding, down from 10 (2026-09-08, at the user's request to get the
+   width down). Padding is charged once per side per column, so on a 21-column table the
+   two are worth ~126px of horizontal scroll on their own — more than most single columns
+   here are wide. 7px still keeps each value clear of the column rule beside it; below
+   about 6 the values start to read as one run of text. */
 .drill-table th, .drill-table td {
-  padding: 6px 10px;
+  padding: 6px 7px;
   text-align: left;
   vertical-align: top;
   white-space: nowrap;
@@ -1014,24 +1019,50 @@ tr.filter-row th {
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.dt-name    { min-width: 148px; max-width: 260px; font-weight: 600; }
-.dt-college { min-width: 170px; max-width: 320px; }
-.dt-city    { max-width: 190px; }
+/* ---------- Prose column widths, re-measured 2026-09-08 ----------
+ *
+ * Asked for directly: every column as wide as its own data and its own heading, and no
+ * wider. Measured over 532 students across four academic years — the widest actual value
+ * in each column, and the 95th percentile so a single outlier does not set the width.
+ *
+ * WHAT WAS ACTUALLY TAKING THE SPACE, in order: the horizontal padding above; then these
+ * `min-width` floors, which were set well above anything in the data and so held columns
+ * open at a width nothing needed; then the `max-width` caps, which were generous enough
+ * to let a genuine outlier claim it.
+ *
+ * The floors are gone or lowered. Under `table-layout: auto` a column with no floor is
+ * already sized to max(its heading, its content) — which is precisely what was asked for —
+ * so a floor can only ever make a column wider than its data, never narrower. Each cap
+ * below is now roughly the column's 95th-percentile value, so the common case still sets
+ * the width on one line and only the true outliers wrap.
+ *
+ * The three worst offenders, and why the caps are what stops them: College holds a 180
+ * character answer (a student typed an essay into the field) which is 1288px unwrapped;
+ * College city holds a 76-character college name, 544px; Board/University holds "National
+ * University of Educational Planning and Administration", 444px. */
+.dt-name    { max-width: 190px; font-weight: 600; }
+.dt-college { max-width: 220px; }
+.dt-city    { max-width: 130px; }
 
-/* The three decoded course columns. Capped like the other prose columns: the longest
-   university in the list is "National University of Educational Planning and
-   Administration", which unwrapped is wider than the rest of the table put together. */
-.dt-field   { min-width: 120px; max-width: 190px; }
-.dt-spec    { min-width: 130px; max-width: 230px; }
-.dt-uni     { min-width: 150px; max-width: 260px; }
+.dt-field   { max-width: 150px; }
+.dt-spec    { max-width: 175px; }
+.dt-uni     { max-width: 190px; }
 
-/* Their headings wrap; every other one does not. "Field of education" and
-   "Board / University" set on one line are wider than most of the values beneath them,
-   and with fifteen columns in the dialog that width is charged to the horizontal scroll
-   for nothing. Two short lines under a sticky header cost no usable space. */
+/* Headings wrap wherever the heading — not the data — is what would set the column. Two
+   short lines under a sticky header cost no usable height, and on a table this wide every
+   one of them is width taken off the horizontal scroll for nothing:
+     STUDENT ID (75px) over a 43px code · APPROVAL AUTH (97px) over a 14px code
+     PENDING DISBURSEMENT (147px) over a 72px amount · COLLEGE CITY, STD / YEAR, ETM / ATM
+   Columns whose DATA is the wider of the two are deliberately not in this list — wrapping
+   their heading would buy nothing and cost a line. */
 .drill-table thead th.dt-field,
 .drill-table thead th.dt-spec,
-.drill-table thead th.dt-uni { white-space: normal; }
+.drill-table thead th.dt-uni,
+.drill-table thead th.dt-id,
+.drill-table thead th.dt-auth,
+.drill-table thead th.dt-city,
+.drill-table thead th.dt-stdyear,
+.drill-table thead th.dt-handler { white-space: normal; }
 
 /* Statuses stay on one line in the dialog, where the column can simply be as wide as
    the longest value. The preview has no such room, so there they wrap — at the
@@ -1117,7 +1148,13 @@ tr.filter-row th {
    heading word and no further. 118px fits "SANCTIONED" on one line and a seven-figure
    total ("₹49,50,925" is 72px) with room to spare. */
 .drill-table thead th.dt-money { white-space: normal; }
-.dt-money { width: 118px; min-width: 96px; }
+/* 96px, down from 118 (2026-09-08). Still one uniform block across the three, which is the
+   2026-09-07 decision and still right — three ledger columns of three different widths do
+   not read as a ledger. Only the figure changed, because 118 was measured against headings
+   set on ONE line. They wrap, so a column has to fit its longest WORD, not its full label:
+   "DISBURSEMENT" is 90px and the widest amount in four years of data, "-₹1,65,000", is
+   72px. 96px clears both. Do not go below 90 — that splits "DISBURSEMENT" mid-word. */
+.dt-money { width: 96px; min-width: 90px; }
 .filter-cell.dt-money .filter-input { text-align: right; }
 
 /* The two authority columns, moved off the matrix and onto the student list on
@@ -1128,7 +1165,11 @@ tr.filter-row th {
   text-align: center;
   white-space: nowrap;
 }
-.dt-auth { width: 96px; }
+/* 68px, down from 96 (2026-09-08). The data is a two-letter login code — 14px — so this
+   column is set entirely by its heading, which now wraps to "APPROVAL / AUTH". That makes
+   the binding word "APPROVAL" at 61px rather than the 97px full label. Do not go below
+   62px: the heading would break mid-word. */
+.dt-auth { width: 68px; }
 
 /* An authority ASSIGNED to the student but who has not signed anything yet — every
    CREATED case. Shown, because it answers "who is this student with", but never as if it
