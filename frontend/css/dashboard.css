@@ -530,28 +530,27 @@ h2 { font-size: var(--fs-md); }
     0 18px 40px -22px rgba(11, 11, 11, 0.18);
 }
 
-/* Fixed layout with explicit column widths, so the status headers wrap rather than the
-   figures being squeezed.
+/* Auto layout: the # / Team member / auth / Total columns keep the explicit widths set
+   below (the browser honours them as long as the content fits), and the seven status
+   columns are sized by the browser from their own content instead of a fixed px guess —
+   a 1- to 3-digit count only ever needs as much room as its heading word requires to
+   wrap, so a narrow heading ("TOTAL", "SANCTION PENDING") produces a narrower column
+   than a wide one ("DISBURSEMENT PENDING"), rather than every status column being forced
+   to the same width. `white-space: normal` + `overflow-wrap: anywhere` on `.matrix th,
+   .matrix td` (below) is what lets a heading wrap instead of stretching its column to
+   fit on one line.
 
-   min-width is what changed when Approval auth and Sanction auth were added, and it is
-   measured, not chosen. Five fixed columns now take 32 + 210 + 136 + 136 + 56 = 570px
-   before a single status column, and a status column needs 125px: the longest word in
-   any heading, "Disbursement", is 111px at this uppercase micro-type plus 7px of padding
-   each side. Below 570 + 7x125 the headings start breaking mid-word — "DISBURSEMEN /
-   T PENDING", which reads as a rendering fault rather than as a wrap.
-
-   So the grid is 1445px wide at minimum and scrolls sideways under that, inside
-   .table-scroll (already overflow:auto, with .shell-main already carrying min-width:0
-   for exactly this). The # and Team member columns are sticky, so a scrolled row is
-   still identifiable. Collapsing the sidebar to its 66px rail recovers 178px and, on a
-   1600px window, removes the scroll entirely. Two name columns simply do not fit beside
-   seven status columns at 1600px; scrolling is the honest way to say so. */
+   Switched from table-layout: fixed on 2026-09-08, at the user's request: a fixed 125px
+   per status column was sized for the widest heading and given to every column alike,
+   even the ones whose own heading is short — auto layout lets each column claim only
+   what it needs, which is what "size depends on the data in that column" means here.
+   The # and Team member columns are still sticky and still work under auto layout —
+   position: sticky does not care which sizing algorithm placed the column. */
 .matrix {
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;
-  min-width: 1445px;
-  table-layout: fixed;
+  table-layout: auto;
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
 }
@@ -615,6 +614,11 @@ h2 { font-size: var(--fs-md); }
 .col-name { left: 32px; width: 210px; border-right: 1px solid var(--border-strong); }
 .matrix thead .col-name, .matrix thead .col-sl { z-index: 6; }
 
+/* "Team member" itself reads like every other heading — bold and centred — even
+   though the body cells beneath it (member names) stay left-aligned via .col-name
+   above; only the header text is overridden here. */
+.matrix thead th.col-name { text-align: center; }
+
 .member-name { font-weight: 600; }
 .member-code {
   font-size: var(--fs-xs);
@@ -631,20 +635,12 @@ h2 { font-size: var(--fs-md); }
    first level approver and the final approver — centred like the rest of the grid, and
    like the member name beside them, so the table still reads as one surface.
 
-   90px IS THE MEASURED MINIMUM, not a guess, and it is set by the HEADING, not by the
-   data. Measured in the browser at these exact fonts, over all seven academic years:
-
-     widest cell content    "dd, ks, ss" (2021-2022)   64px  ->  78px
-     longest heading word   "SANCTION"                 76px  ->  90px
-
-   (+14px for the 7px of padding each side.) The heading is allowed to wrap to two lines,
-   "APPROVAL / AUTH", which costs no height at all because the status headings beside it
-   already take two — so the column only ever has to fit the longest single WORD. Below
-   90px that word starts breaking mid-word, the same fault the status headings have.
-
-   This is 46px narrower per column than the 136px the full names needed before the
-   business asked for short forms — 92px handed back to the grid. Do not shrink it to the
-   78px the codes alone would take: that fits the data and splits the heading.
+   No fixed width, as of 2026-09-08 — same change and same reason as the status columns
+   above: under table-layout: auto the browser sizes this column from its own heading and
+   its own data ("dd, ks, ss" or "SANCTION") rather than a px figure that was sized for
+   the worst case and then applied to both columns alike. The heading is still allowed to
+   wrap to two lines, "APPROVAL / AUTH", which costs no height because the status
+   headings beside it already take two.
 
    Deliberately NOT sticky — Total is not either, and four frozen columns would leave a
    scrolled view with barely half its width for the numbers.
@@ -654,11 +650,16 @@ h2 { font-size: var(--fs-md); }
    two share. Same trap the drill table's prose columns carry a note about. */
 .matrix td.col-auth,
 .matrix th.col-auth {
-  width: 90px;
   color: var(--text-secondary);
   font-weight: 500;
   line-height: 1.3;
 }
+
+/* The heading text ("APPROVAL AUTH" / "SANCTION AUTH") is bold like every other
+   heading in the row — only the body cells (the login codes) stay at the lighter
+   500 weight above, which .matrix thead th's own 700 would otherwise lose to
+   .col-auth's higher specificity. */
+.matrix thead th.col-auth { font-weight: 700; color: var(--text-primary); }
 
 /* The login code IS the value here, so it takes full ink and a value's weight — unlike
    .member-code, where the same string is a muted annotation under a name that is already
