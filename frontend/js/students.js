@@ -528,14 +528,20 @@
   let listTotal = 0;
 
   async function openList(ctx) {
-    listCtx = { ...ctx };
+    // The dialog always opens on the latest academic year, regardless of which
+    // year's cell was clicked — asked for directly: a user reading an older year's
+    // matrix should still land on current data when they open the drill-down, not
+    // be left on the stale year until they notice and switch it themselves.
+    // window.EduConYears comes from /api/years, sorted newest first.
+    const latestYear = (window.EduConYears && window.EduConYears[0]) || ctx.year;
+    listCtx = { ...ctx, year: latestYear };
     hidePop();
 
     listTitle.textContent = ctx.colLabel;
     listMeta.textContent = ctx.who;
     listYear.innerHTML = (window.EduConYears || [ctx.year])
       .map(y => `<option value="${esc(y)}">${esc(y)}</option>`).join('');
-    listYear.value = ctx.year;
+    listYear.value = latestYear;
 
     if (!listDialog.open) listDialog.showModal();
     await paintList();
