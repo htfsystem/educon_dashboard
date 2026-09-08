@@ -364,15 +364,20 @@ async function getReconciliation(pool, year) {
 
 /** Everything one dashboard render needs, in a single round trip. */
 async function getYearReport(pool, year) {
-  const [statuses, members, totals, assignedStatusTotals, reconciliation] = await Promise.all([
+  const [statuses, members, totals, assignedStatusTotals, reconciliation, authorities] = await Promise.all([
     getStatusCatalog(pool),
     getMatrix(pool, year),
     getStatusTotals(pool, year),
     getAssignedStatusTotals(pool, year),
-    getReconciliation(pool, year)
+    getReconciliation(pool, year),
+    getAuthorities(pool, year)
   ]);
 
   const rowSum = members.reduce((s, m) => s + m.total, 0);
+
+  for (const m of members) {
+    m.authorities = authorities.members[m.etmId] || NO_AUTHORITY;
+  }
 
   return {
     academicYear: year,
