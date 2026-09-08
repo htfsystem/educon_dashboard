@@ -84,11 +84,6 @@
       <circle cx="12" cy="12" r="8.25"/>
       <path d="M12 3.75a8.25 8.25 0 0 1 0 16.5z" fill="currentColor" stroke="none"/>
     </symbol>
-    <symbol id="icoSettings" viewBox="0 0 24 24">
-      <path d="M4 7.5h4.5M13 7.5h7M4 16.5h7M15.5 16.5h4.5"/>
-      <circle cx="10.75" cy="7.5" r="2.25"/>
-      <circle cx="13.25" cy="16.5" r="2.25"/>
-    </symbol>
     <symbol id="icoPower" viewBox="0 0 24 24">
       <path d="M12 3.75v8"/>
       <path d="M7.35 6.6a7.75 7.75 0 1 0 9.3 0"/>
@@ -121,21 +116,26 @@
 
 <!-- ============================================================ LOGIN ========= -->
 <div id="loginScreen" class="login-screen" hidden>
-  <div class="login-aura" aria-hidden="true"></div>
+  <!-- Two drifting orbs in the brand's blue and green. They animate `transform`
+       only — no filter, no blur, no repaint of a full-viewport layer — so the
+       movement costs nothing while someone is typing a password. -->
+  <div class="login-aura" aria-hidden="true">
+    <span class="aura-orb aura-orb-blue"></span>
+    <span class="aura-orb aura-orb-green"></span>
+  </div>
 
   <form class="login-card" id="loginForm" autocomplete="on">
     <div class="login-brand">
-      <svg class="ec-mark ec-mark-login" width="64" height="67" aria-hidden="true" focusable="false">
-        <use href="#ecMark"/>
-      </svg>
+      <span class="login-mark-ring" aria-hidden="true">
+        <svg class="ec-mark ec-mark-login" width="64" height="67" aria-hidden="true" focusable="false">
+          <use href="#ecMark"/>
+        </svg>
+      </span>
       <div>
         <div class="login-name">EduCon</div>
         <div class="login-tag">P.R.I.D.E. thru EduCon</div>
       </div>
     </div>
-
-    <h1 class="login-title">Sign in to the pipeline dashboard</h1>
-    <p class="login-sub">Read-only reporting over <b>educon_prod</b>. No student data is ever modified.</p>
 
     <label class="login-field">
       <span>Username</span>
@@ -149,8 +149,7 @@
 
     <p class="login-error" id="loginError" role="alert" hidden></p>
 
-    <button class="login-btn" id="loginBtn" type="submit">Sign in</button>
-    <p class="login-foot">Dashboard accounts are separate from EduCon student logins.</p>
+    <button class="login-btn" id="loginBtn" type="submit"><span>Sign in</span></button>
   </form>
 </div>
 
@@ -242,18 +241,11 @@
       <button class="usermenu-item" id="refreshBtn" role="menuitem" type="button">
         <svg class="ico usermenu-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoRefresh"/></svg>
         <span class="usermenu-label">Refresh data</span>
-        <span class="usermenu-hint">from database</span>
       </button>
 
       <button class="usermenu-item" id="themeBtn" role="menuitem" type="button">
         <svg class="ico usermenu-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoTheme"/></svg>
         <span class="usermenu-label">Toggle theme</span>
-        <span class="usermenu-hint" id="themeHint">—</span>
-      </button>
-
-      <button class="usermenu-item" id="settingsBtn" role="menuitem" type="button">
-        <svg class="ico usermenu-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoSettings"/></svg>
-        <span class="usermenu-label">Settings</span>
       </button>
 
       <button class="usermenu-item" id="manageUsersBtn" role="menuitem" type="button" data-perm="manage:users" hidden>
@@ -391,11 +383,12 @@
 <!-- -------------------------------------------------------- PAGE 3 · USERS --- -->
 <main id="pageUsers" class="layout page">
   <section class="panel panel-wide">
-    <div class="panel-head">
-      <div>
-        <h2>Dashboard accounts</h2>
-        <p class="panel-sub">These accounts are stored locally and are unrelated to EduCon student logins.</p>
-      </div>
+    <!-- The "Dashboard accounts" heading and the line "These accounts are stored
+         locally and are unrelated to EduCon student logins." were removed on
+         2026-09-08 at the user's request. The panel, its table and Add user stay —
+         only the copy went. The head keeps its wrapper so Add user still sits at the
+         right-hand end; see .panel-head-bare in app.css. -->
+    <div class="panel-head panel-head-bare">
       <button class="btn btn-primary" id="addUserBtn" type="button">Add user</button>
     </div>
     <div class="table-scroll">
@@ -405,9 +398,12 @@
 
   <section class="panel panel-wide">
     <div class="panel-head">
+      <!-- The subtitle "The last 50 login attempts, successful or not" was removed on
+           2026-09-08: 50 is the display limit in loginHistory(), not a retention
+           limit — nothing is ever deleted from login_log — and the line read as if
+           older attempts were discarded. -->
       <div>
         <h2>Recent sign-ins</h2>
-        <p class="panel-sub">The last 50 login attempts, successful or not</p>
       </div>
     </div>
     <div class="table-scroll">
@@ -439,7 +435,7 @@
         <option value="manager">Manager — read + export</option>
         <option value="admin">Admin — everything + manage users</option>
       </select></label>
-    <label class="login-field"><span id="uPassLabel">Password (min 8 characters)</span>
+    <label class="login-field"><span id="uPassLabel">Password (min 3 characters)</span>
       <input id="uPassword" type="password"></label>
     <p class="login-error" id="userFormError" role="alert" hidden></p>
     <div class="dialog-actions">
@@ -450,31 +446,9 @@
   </form>
 </dialog>
 
-<!-- Settings -->
-<dialog id="settingsDialog" class="dialog">
-  <form method="dialog">
-    <h3>Settings</h3>
-
-    <fieldset class="settings-group">
-      <legend>Appearance</legend>
-      <div class="segmented" id="themeChoice" role="radiogroup" aria-label="Theme">
-        <button class="segmented-btn" data-theme-mode="light"  role="radio" aria-checked="false" type="button">Light</button>
-        <button class="segmented-btn" data-theme-mode="dark"   role="radio" aria-checked="false" type="button">Dark</button>
-        <button class="segmented-btn" data-theme-mode="system" role="radio" aria-checked="false" type="button">System</button>
-      </div>
-    </fieldset>
-
-    <fieldset class="settings-group">
-      <legend>Signed in as</legend>
-      <p class="settings-line"><span id="setName">—</span> · <span id="setRole">—</span></p>
-      <p class="settings-note">Dashboard accounts are separate from EduCon student logins. Access is read-only — no student data is ever modified.</p>
-    </fieldset>
-
-    <div class="dialog-actions">
-      <button class="btn btn-primary" value="close" type="submit">Done</button>
-    </div>
-  </form>
-</dialog>
+<!-- The Settings dialog was removed on 2026-09-08 at the user's request. Its only two
+     contents are still reachable: the theme is the menu's own "Toggle theme" row, and
+     "signed in as" is the name, handle and role already printed in the menu's head. -->
 
 <!-- ============================================== STUDENT DRILL-DOWN ========== -->
 <!-- Hover preview for a matrix cell. Five columns only — Sr. No, student ID, name, the

@@ -91,8 +91,6 @@
     $('userAvatarLg').textContent = initials(user.fullName);
     $('userNameFull').textContent = user.fullName;
     $('userHandle').textContent = `@${user.username} · ${user.role}`;
-    $('setName').textContent = user.fullName;
-    $('setRole').textContent = user.role;
 
     // Anything the role cannot use is taken out of the page entirely.
     document.querySelectorAll('[data-perm]').forEach(node => {
@@ -139,7 +137,6 @@
   function menuOpen() { return !menuPanel.hidden; }
 
   function openMenu() {
-    describeTheme();
     menuPanel.hidden = false;
     menuBtn.setAttribute('aria-expanded', 'true');
     menuPanel.querySelector('.usermenu-item:not([hidden])')?.focus();
@@ -149,14 +146,6 @@
     menuPanel.hidden = true;
     menuBtn.setAttribute('aria-expanded', 'false');
     if (refocus) menuBtn.focus();
-  }
-
-  /** Keeps the theme row's hint honest about what a click will do. */
-  function describeTheme() {
-    const mode = window.EduConSummary.themeMode();
-    $('themeHint').textContent = mode === 'system'
-      ? `system · ${window.EduConSummary.isDark() ? 'dark' : 'light'}`
-      : mode;
   }
 
   menuBtn.addEventListener('click', () => (menuOpen() ? closeMenu() : openMenu()));
@@ -180,34 +169,15 @@
 
   // Refresh and theme keep their own handlers elsewhere; the menu only closes after.
   ['refreshBtn', 'themeBtn'].forEach(id =>
-    $(id).addEventListener('click', () => { describeTheme(); closeMenu(); }));
+    $(id).addEventListener('click', closeMenu));
 
   $('manageUsersBtn').addEventListener('click', () => { closeMenu(); go('users'); });
 
-  document.addEventListener('educon:theme', describeTheme);
+  // ---------- Sign out ----------
 
-  // ---------- Settings ----------
-
-  const settingsDialog = $('settingsDialog');
-
-  function paintThemeChoice() {
-    const mode = window.EduConSummary.themeMode();
-    document.querySelectorAll('#themeChoice .segmented-btn').forEach(b =>
-      b.setAttribute('aria-checked', String(b.dataset.themeMode === mode)));
-  }
-
-  $('settingsBtn').addEventListener('click', () => {
-    closeMenu();
-    paintThemeChoice();
-    settingsDialog.showModal();
-  });
-
-  document.querySelectorAll('#themeChoice .segmented-btn').forEach(btn =>
-    btn.addEventListener('click', () => {
-      window.EduConSummary.setTheme(btn.dataset.themeMode);
-      paintThemeChoice();
-    }));
-
+  // The session is ended server-side first, then the shell is torn down and the login
+  // screen put back — so a signed-out tab left open cannot keep reading the dashboard,
+  // and whoever is at the machine either signs in again or closes it.
   $('logoutBtn').addEventListener('click', async () => {
     closeMenu();
     await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
@@ -612,7 +582,7 @@
       return;
     }
     $('loginTable').innerHTML = `
-      <thead><tr><th>When</th><th>Username</th><th>Result</th><th>From</th></tr></thead>
+      <thead><tr><th>When</th><th>Username</th><th>Result</th></tr></thead>
       <tbody>${history.map(h => `
         <tr>
           <td>${new Date(h.at).toLocaleString()}</td>
@@ -620,16 +590,18 @@
           <td>${h.ok
             ? '<span class="state-on"><i class="state-dot"></i>Signed in</span>'
             : '<span class="state-off"><i class="state-dot"></i>Rejected</span>'}</td>
-          <td>${esc(h.ip || '—')}</td>
         </tr>`).join('')}</tbody>`;
 
+    // No "From" column. Removed permanently on 2026-09-08 at the user's request: on a
+    // dashboard reached over a LAN it read `::1` or a router address on every row, so it
+    // identified nobody. /api/login-history still returns `ip` and authService still
+    // records it — this is a display decision, not a change to what is logged.
     window.EduConFilters.mount($('loginTable'), {
       id: 'loginHistory',
       columns: [
         { index: 0, type: 'text', label: 'When' },
         { index: 1, type: 'text', label: 'Username' },
-        { index: 2, type: 'select', label: 'Result' },
-        { index: 3, type: 'text', label: 'From' }
+        { index: 2, type: 'select', label: 'Result' }
       ]
     });
   }
@@ -647,7 +619,7 @@
     $('uPassword').value = '';
     $('uPassLabel').textContent = user
       ? 'New password (leave blank to keep the current one)'
-      : 'Password (min 8 characters)';
+      : 'Password (min 3 characters)';
     $('userFormError').hidden = true;
 
     $('userDialog').showModal();

@@ -112,8 +112,8 @@ function createUser({ username, password, fullName, role }) {
 
   username = String(username || '').trim();
   if (!username) throw new Error('Username is required');
-  if (!password || String(password).length < 8) {
-    throw new Error('Password must be at least 8 characters');
+  if (!password || String(password).length < 3) {
+    throw new Error('Password must be at least 3 characters');
   }
   if (!ROLES.includes(role)) throw new Error(`Role must be one of: ${ROLES.join(', ')}`);
 
@@ -136,8 +136,8 @@ function updateUser(id, { fullName, role, active, password }) {
   if (role !== undefined && !ROLES.includes(role)) {
     throw new Error(`Role must be one of: ${ROLES.join(', ')}`);
   }
-  if (password !== undefined && String(password).length < 8) {
-    throw new Error('Password must be at least 8 characters');
+  if (password !== undefined && String(password).length < 3) {
+    throw new Error('Password must be at least 3 characters');
   }
 
   // Locking out the last admin would make the dashboard unadministrable.
