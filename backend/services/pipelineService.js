@@ -453,6 +453,81 @@ const PROFILE_JOINS = `
   LEFT JOIN educon_student_current_education_details ce ON ce.s_id = %CASE%
   LEFT JOIN educon_student_current_address_details   ad ON ad.s_id = %STUDENT%`;
 
+/**
+ * The two authorities, per CASE — the same sources getAuthorities() uses on the matrix,
+ * and for the same reason: who ACTUALLY signed the case off, never the *planned*
+ * authority on the student's profile row (see that function's note for the evidence).
+ *
+ * Moved down to the student on 2026-09-08, at the user's request: an authority is a fact
+ * about a case, so it belongs beside the student whose case it is rather than aggregated
+ * into a member's row on the summary sheet.
+ *
+ * Neither join fans out. `educon_student_first_level_approval` is one row per case (750 /
+ * 750) and carries no academic_year — the case already is the year. The sanction table
+ * carries the same 14 re-saved (s_id, academic_year) duplicates the amount does, so it is
+ * read through SELECT DISTINCT; verified that no duplicated key differs on the authority.
+ * Both columns hold a login_id, which is unique and never NULL across all 462 profile
+ * rows, so the two name lookups fan nothing out either.
+ */
+const AUTHORITY_JOINS = `
+  LEFT JOIN educon_student_first_level_approval fl ON fl.s_id = pick.caseId
+  LEFT JOIN (
+    SELECT DISTINCT s_id, academic_year, sanctioning_authority_id
+      FROM educon_student_final_approval_and_sanction
+  ) san ON san.s_id = pick.caseId AND san.academic_year = pick.academicYear
+  LEFT JOIN educon_user_profile ap ON ap.login_id = fl.approval_id
+  LEFT JOIN educon_user_profile sn ON sn.login_id = san.sanctioning_authority_id
+  LEFT JOIN educon_user_profile pap ON pap.u_id = sp.first_level_auth
+  LEFT JOIN educon_user_profile psn ON psn.u_id = sp.sanctioning_auth`;
+
+/* ---------- The ASSIGNED authority, for a case nobody has signed yet (2026-09-08) ----
+ *
+ * Asked for directly: a CREATED student already has an approving and a sanctioning
+ * authority assigned, and the columns were blank for them. They were blank because the
+ * case-level tables record what HAPPENED, and nothing has happened yet — zero of the 178
+ * CREATED cases carry a first-level-approval or a sanction row. The answer is on the
+ * STUDENT's profile row instead: educon_user_profile.first_level_auth / sanctioning_auth,
+ * the *planned* authority, which is set for every one of them.
+ *
+ * THIS IS THE SOURCE THE MATRIX DELIBERATELY REJECTED, and the reason it is right here and
+ * wrong there is worth keeping straight. On the matrix it competed with the actual
+ * authority and lost — it agrees with what really happened on only 442 of 736 decided
+ * cases. Here it never competes: it is read ONLY when the case has no actual authority, so
+ * there is nothing for it to disagree with, and it is the sole answer to "who is this
+ * student assigned to". The actual authority always wins where one exists.
+ *
+ * The two are still marked apart rather than blended — `assigned: true` on the fallback,
+ * which the client prints in a muted style with "assigned, not yet approved" on hover.
+ * "dd will approve this" and "dd approved this" are different claims and the list must not
+ * make them look like one.
+ *
+ * PSEUDO-USERS ARE SUPPRESSED. The planned columns hold a numeric u_id (unlike the
+ * case-level columns, which hold a login_id) and 87 of the 177 unapproved CREATED cases
+ * point at a holding-pen account — E300 Amit Educon, rcp Reached Carierpoint, clo Closed
+ * Rejected. Those are not approvers, and "clo" under Sanction auth would be a fabrication,
+ * so they fall back to blank exactly as before. What is left is real: 73 of the 74 CREATED
+ * cases in 2026-2027 read dd for approval and ks or mp for sanction — the same people who
+ * actually sign (dd 710 approvals; ks 706 and mp 13 sanctions).
+ */
+const isPseudo = loginId => PSEUDO_USERS.includes(loginId);
+
+/**
+ * One authority. The actual signer where the case has one; otherwise the authority
+ * assigned on the student's profile, marked as such. Null when neither is available or
+ * the assigned one is a holding-pen account.
+ */
+const authority = (code, fname, lname, planned) => {
+  if (code) {
+    return { loginId: code, name: displayName({ u_fname: fname, u_lname: lname, login_id: code }), assigned: false };
+  }
+  if (!planned || !planned.login_id || isPseudo(planned.login_id)) return null;
+  return {
+    loginId: planned.login_id,
+    name: displayName({ u_fname: planned.fname, u_lname: planned.lname, login_id: planned.login_id }),
+    assigned: true
+  };
+};
+
 const PROFILE_COLUMNS = `
   ce.sce_education, ce.sce_branch, ce.sce_course_name, ce.sce_board,
   ce.sce_name AS collegeName,
@@ -565,6 +640,12 @@ async function getStudentList(pool, { year, etmId = null, statuses = [], withMon
       h.login_id        AS handlerLogin,
       h.u_fname         AS h_fname,
       h.u_lname         AS h_lname,
+      fl.approval_id             AS approvalCode,
+      ap.u_fname AS ap_fname, ap.u_lname AS ap_lname,
+      san.sanctioning_authority_id AS sanctionCode,
+      sn.u_fname AS sn_fname, sn.u_lname AS sn_lname,
+      pap.login_id AS pap_login, pap.u_fname AS pap_fname, pap.u_lname AS pap_lname,
+      psn.login_id AS psn_login, psn.u_fname AS psn_fname, psn.u_lname AS psn_lname,
       ${PROFILE_COLUMNS}${moneyColumns}
     FROM (
       SELECT
@@ -580,6 +661,7 @@ async function getStudentList(pool, { year, etmId = null, statuses = [], withMon
     LEFT JOIN educon_user_profile sp ON sp.u_id = pick.user_id
     LEFT JOIN educon_student_personal_details pd ON pd.s_id = pick.user_id
     LEFT JOIN educon_user_profile h  ON h.u_id  = pick.ownerId
+    ${AUTHORITY_JOINS}
     ${PROFILE_JOINS.replace('%CASE%', 'pick.caseId').replace('%STUDENT%', 'pick.user_id')}
     WHERE ${ownerClause}
   `, params);
@@ -599,6 +681,16 @@ async function getStudentList(pool, { year, etmId = null, statuses = [], withMon
         handler: r.handlerLogin
           ? { loginId: r.handlerLogin, name: displayName({ u_fname: r.h_fname, u_lname: r.h_lname, login_id: r.handlerLogin }) }
           : null,
+        // Carried on every row, like the handler: the case is what has an approver, so a
+        // list opened from a member cell and one opened from the Grand Total row read the
+        // same. Who actually signed where the case has been signed; otherwise who is
+        // assigned to (`assigned: true`), which is what fills these columns for a CREATED
+        // student. Null only when neither is known — an absence, printed as an em dash,
+        // never a guess at who will sign it.
+        approvalAuth: authority(r.approvalCode, r.ap_fname, r.ap_lname,
+          { login_id: r.pap_login, fname: r.pap_fname, lname: r.pap_lname }),
+        sanctionAuth: authority(r.sanctionCode, r.sn_fname, r.sn_lname,
+          { login_id: r.psn_login, fname: r.psn_fname, lname: r.psn_lname }),
         profile: studentProfile(r)
       };
 

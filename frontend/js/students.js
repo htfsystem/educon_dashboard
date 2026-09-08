@@ -33,11 +33,17 @@
  * but not a close. Closing forgets them, so the next number opened is answered as itself
  * rather than through the previous question's filter. See the `close` handler below.
  *
- * SORTING BY STUDENT ID (2026-09-05)
+ * SORTING BY STUDENT ID (2026-09-05), OVER A PIPELINE DEFAULT (2026-09-08)
  * One column sorts, at the user's request: Student ID, ascending or descending. The list
- * otherwise arrives in the server's own order (student name, A→Z). Everything else in the
- * list is a category rather than a sequence, and the filter row is the right tool for
+ * otherwise opens in pipeline status order — CREATED first, then SUBMITTED, and so on down
+ * js/columns.js — which is how a cohort's progress is actually read. Everything else in
+ * the list is a category rather than a sequence, and the filter row is the right tool for
  * those — see the header rules in `listTable`.
+ *
+ * THE AUTHORITIES MOVED HERE (2026-09-08)
+ * Approval auth and Sanction auth were columns of the summary matrix, aggregated per team
+ * member. They are facts about a CASE, so they now sit beside the student whose case it
+ * is, between ETM/ATM and the money, and the matrix no longer carries them at all.
  *
  * EXPORTING WHAT IS ON SCREEN (2026-09-05)
  * The Export button in the dialog head writes exactly the visible rows to .xlsx. It is
@@ -144,6 +150,47 @@
    */
   const MONEY_KEYS = ['sanctioned', 'disbursed', 'pending'];
 
+  /**
+   * One authority column — the login code that signed this student's case off at that
+   * stage, with the person's full name on hover.
+   *
+   * The code is the value on screen, the same short form the matrix used to print and the
+   * same one the member column already shows under every name, so nothing new has to be
+   * learned to read it. It filters as a `select`: the question asked of these columns is
+   * "show me everything dd approved", never "whose approver contains a d".
+   *
+   * SIGNED vs ASSIGNED (2026-09-08). A case that nobody has signed yet — every CREATED
+   * student — still has an authority *assigned* on their profile, and the server sends it
+   * with `assigned: true`. It is shown, because it is the answer to "who is this student
+   * with", but it is shown differently: muted, italic, and saying so on hover. "dd will
+   * approve this" and "dd approved this" are different claims, and one column printing
+   * both the same way turns the second into the first. The code itself is identical, so
+   * the column still filters as one list of people.
+   */
+  const authCol = (key, label, role) => ({
+    key,
+    label,
+    cls: 'dt-auth',
+    filter: 'select',
+    text: s => (s[key] ? s[key].loginId : ''),
+    // The export cannot carry italics or a tooltip, so the distinction rides on the cell
+    // as data and the sheet spells it out in words. Without this a printed column of
+    // codes would read as "all of these were approved".
+    attrs: s => (s[key] && s[key].assigned ? ' data-assigned="1"' : ''),
+    // An absence, printed as one. Neither signed nor assigned to a real person — never a
+    // guess at who will eventually sign it.
+    html: s => {
+      const a = s[key];
+      if (!a) return BLANK;
+      const Role = role.replace(/^./, c => c.toUpperCase());
+      const title = a.assigned
+        ? `${Role} assigned to this student — not yet approved\n${a.name}`
+        : `${Role}: ${a.name}`;
+      return `<span class="auth-code${a.assigned ? ' is-assigned' : ''}" title="${
+        esc(title)}">${esc(a.loginId)}</span>`;
+    }
+  });
+
   /** One amount, or null when this payload carries no amounts at all (a viewer's). */
   const amount = (s, key) => (s && s.money ? Number(s.money[key]) || 0 : null);
 
@@ -163,12 +210,16 @@
     // owed more than X", never "whose sanction contains the digits 5000".
     filter: 'min',
     money: true,
-    text: s => (amount(s, key) === null ? null : money(amount(s, key))),
+    text: s => (amount(s, key) ? money(amount(s, key)) : null),
     attrs: s => (amount(s, key) === null ? ''
       : ` data-money="${key}" data-amount="${amount(s, key)}"`),
     html: s => {
       const n = amount(s, key);
-      if (n === null) return BLANK;
+      // Nothing, shown as nothing (2026-09-08, at the user's request). A column of
+      // "₹0" reads as a figure someone recorded; a blank reads as what it is — no
+      // sanction row, or nothing paid yet. The cell still carries data-amount="0", so
+      // the totals row and the export are unaffected.
+      if (!n) return BLANK;
       // A negative pending is not an error and is not clamped: the student has been paid
       // more this year than the year's sanction row records — usually because no sanction
       // row was ever written. Card 2 relabels it; a column has no room for a second label,
@@ -191,17 +242,24 @@
       text: s => s.name },
     { key: 'status',  label: 'Current status', cls: 'dt-status',  filter: 'select',
       text: s => s.status, html: s => statusTag(s.status) },
-    // The money sits directly behind the status rather than at the far right of the
-    // table: with nineteen columns the right-hand end is two screens of horizontal scroll
-    // away, and these three are the reason the list was opened.
-    moneyCol('sanctioned', 'Sanctioned'),
-    moneyCol('disbursed',  'Disbursed'),
-    moneyCol('pending',    'Pending disbursement'),
     { key: 'handler', label: 'ETM / ATM',      cls: 'dt-handler', filter: 'select',
       text: s => (s.handler ? s.handler.name : ''),
       html: s => (s.handler
         ? `${esc(s.handler.name)}<span class="dt-sub">${esc(s.handler.loginId)}</span>`
         : BLANK) },
+    // The two authorities, moved down here from the summary matrix on 2026-09-08 at the
+    // user's request. They belong to the CASE, so this is where they actually answer a
+    // question: "who approved this student", not "which approvers appear somewhere among
+    // the sixty cases this member holds". The code is the value, exactly as the matrix
+    // printed it; the full name is the cell's tooltip.
+    authCol('approvalAuth', 'Approval auth', 'first level approver'),
+    authCol('sanctionAuth', 'Sanction auth', 'final approver'),
+    // The money follows the identity block rather than sitting at the far right of the
+    // table: with twenty-one columns the right-hand end is two screens of horizontal
+    // scroll away, and these three are the reason the list was opened.
+    moneyCol('sanctioned', 'Sanctioned'),
+    moneyCol('disbursed',  'Disbursed'),
+    moneyCol('pending',    'Pending disbursement'),
     // Education → field → specialization is the application's own hierarchy, and reads
     // as one thought across three columns: "Graduation · Medicine · MBBS : Allopathic".
     // They were raw codes until 2026-09-01 and so were deliberately kept off this list;
@@ -291,14 +349,35 @@
       { numeric: true, sensitivity: 'base' })
     || String(a.name ?? '').localeCompare(String(b.name ?? ''));
 
+  /* ---------- The default order is the pipeline itself (2026-09-08) ----------
+   *
+   * Asked for directly: the list should open in status order — the CREATED students, then
+   * the SUBMITTED ones, and so on — rather than alphabetically by name. A list read to see
+   * where a cohort has got to is read down the pipeline, and a Total or Grand Total cell
+   * mixes several statuses together.
+   *
+   * The order comes from `js/columns.js` rather than from a second list written here, so
+   * the sequence down a list is by construction the same left-to-right sequence the matrix
+   * columns are in. A status not among the 7 reported columns sorts to the end rather than
+   * to the front, where an unrecognised value would look like the start of the pipeline.
+   * Ties fall back to the name, so the order is total and a re-render never reshuffles
+   * students who share a status.
+   */
+  const STATUS_RANK = new Map(COLUMNS.flatMap(c => c.statuses).map((s, i) => [s, i]));
+  const statusRank = s => (STATUS_RANK.has(s) ? STATUS_RANK.get(s) : STATUS_RANK.size);
+
+  const byStatus = (a, b) =>
+    statusRank(a.status) - statusRank(b.status)
+    || String(a.name ?? '').localeCompare(String(b.name ?? ''));
+
   const sortStudents = students =>
-    (listSortDir === 0 ? students : [...students].sort(byCode(listSortDir)));
+    [...students].sort(listSortDir === 0 ? byStatus : byCode(listSortDir));
 
   /** The tooltip names the next click's effect, never the current state. */
   const nextSortLabel = dir => (
     dir === 0 ? 'Sort by Student ID, A → Z'
       : dir === 1 ? 'Sort by Student ID, Z → A'
-        : 'Clear the sort — back to student name order');
+        : 'Clear the sort — back to pipeline status order');
 
   const ariaSort = dir => (dir === 1 ? 'ascending' : dir === -1 ? 'descending' : 'none');
 
@@ -389,7 +468,8 @@
         return n + (td ? Number(td.dataset.amount) || 0 : 0);
       }, 0);
       cell.dataset.amount = String(sum);
-      cell.textContent = money(sum);
+      // Blank for nil, the same rule the cells above it follow.
+      cell.textContent = sum ? money(sum) : BLANK;
       // Same mark the cells above it carry, for the same reason: a negative total means
       // this set of students has been paid more than their sanction rows record.
       cell.classList.toggle('is-over', key === 'pending' && sum < 0);
@@ -740,7 +820,8 @@
     // implying it might be a subset. The sort is stamped for the same reason the filters
     // are — the rows come out in the order on screen, so the sheet says what that order is
     // rather than leaving a reader to guess why it is not alphabetical by name.
-    const sortNote = listSortDir === 0 ? ''
+    const sortNote = listSortDir === 0
+      ? '     ·     Sorted by pipeline status'
       : `     ·     Sorted by Student ID (${listSortDir === 1 ? 'A → Z' : 'Z → A'})`;
     rows.push({
       cells: [{
@@ -772,11 +853,18 @@
             .map(n => (n.nodeType === 3 ? n.nodeValue : n.textContent))
             .join(' ').replace(/\s+/g, ' ').trim();
           if (ci === 0) return { v: i + 1, s: S.num };
+          // An assigned-but-not-yet-approved authority says so in the cell. On screen it
+          // is italic with a tooltip; neither survives into a spreadsheet, and a bare
+          // "dd" here would be read as a decision that has been taken.
+          if (td.dataset.assigned) return { v: `${text} (assigned)`, s: S.txt };
           // A money cell goes out as the number behind it, in a ₹ format, never as the
           // rendered string: a column of text is one Excel cannot sum, and the first thing
           // anyone does with this sheet is total a filtered set of students.
           if (td.dataset.amount !== undefined) {
-            return { v: Number(td.dataset.amount), s: S.money };
+            const n = Number(td.dataset.amount);
+            // Nil goes out blank, exactly as it reads on screen — the cell keeps the
+            // money style so the column still totals and formats as one.
+            return { v: n || '', s: S.money };
           }
           return { v: text, s: S.txt };
         })
@@ -801,7 +889,7 @@
         const i = moneyIndex[key];
         const sum = bodyRows.reduce((n, tr) =>
           n + (Number(tr.cells[i]?.dataset.amount) || 0), 0);
-        totalCells[i] = { v: sum, s: S.moneyGrand };
+        totalCells[i] = { v: sum || '', s: S.moneyGrand };
       });
       rows.push({ cells: totalCells, height: 20 });
     }
@@ -811,6 +899,9 @@
     const width = h => {
       const key = h.toLowerCase();
       if (key.startsWith('sr')) return 6;
+      // Before the sanction test below — "Sanction auth" holds a two-letter login code,
+      // not a seven-figure amount.
+      if (key.endsWith('auth')) return 14;
       // Wide enough for "Pending disbursement" over a seven-figure ₹ amount.
       if (key.includes('sanction') || key.includes('disburse')) return 17;
       if (key.includes('college') && !key.includes('city')) return 34;

@@ -117,7 +117,8 @@ window.EduConXlsx = (() => {
    * 6 team band · 7 subtotal label · 8 subtotal number · 9 grand label · 10 grand number ·
    * 11 note · 12 note key · 13 money · 14 money total
    *
-   * `money` and `moneyGrand` carry numFmt 164 — a ₹ amount in Indian digit grouping. The
+   * `money` and `moneyGrand` are right-aligned (2026-09-08, matching the screen) and carry
+   * numFmt 164 — a ₹ amount in Indian digit grouping. The
    * value in the cell is still a plain number, so Excel sums it; only its display is
    * formatted. Appending them at the end is deliberate: an id inserted in the middle would
    * silently restyle every existing call site.
@@ -219,8 +220,8 @@ window.EduConXlsx = (() => {
  <xf xfId="0" numFmtId="0" fontId="3" fillId="5" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
  <xf xfId="0" numFmtId="0" fontId="2" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="top" wrapText="1"/></xf>
  <xf xfId="0" numFmtId="0" fontId="5" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
- <xf xfId="0" numFmtId="164" fontId="0" fillId="0" borderId="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
- <xf xfId="0" numFmtId="164" fontId="3" fillId="5" borderId="1" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="164" fontId="0" fillId="0" borderId="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="164" fontId="3" fillId="5" borderId="1" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;

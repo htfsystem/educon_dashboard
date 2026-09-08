@@ -630,36 +630,11 @@ h2 { font-size: var(--fs-md); }
 /* No per-row ETM/ATM tag: the sticky team band above each block already says which
    team the rows belong to, so repeating it on every name was pure noise. */
 
-/* ---------- Approval auth / Sanction auth ----------
-   Two attribute columns rather than two more counts, holding the login codes of the
-   first level approver and the final approver — centred like the rest of the grid, and
-   like the member name beside them, so the table still reads as one surface.
-
-   No fixed width, as of 2026-09-08 — same change and same reason as the status columns
-   above: under table-layout: auto the browser sizes this column from its own heading and
-   its own data ("dd, ks, ss" or "SANCTION") rather than a px figure that was sized for
-   the worst case and then applied to both columns alike. The heading is still allowed to
-   wrap to two lines, "APPROVAL / AUTH", which costs no height because the status
-   headings beside it already take two.
-
-   Deliberately NOT sticky — Total is not either, and four frozen columns would leave a
-   scrolled view with barely half its width for the numbers.
-
-   Written `.matrix td.col-auth`, never a bare `.col-auth`: `.matrix th, .matrix td` is
-   (0,1,1) and a bare class is (0,1,0), so a bare class silently loses every property the
-   two share. Same trap the drill table's prose columns carry a note about. */
-.matrix td.col-auth,
-.matrix th.col-auth {
-  color: var(--text-secondary);
-  font-weight: 500;
-  line-height: 1.3;
-}
-
-/* The heading text ("APPROVAL AUTH" / "SANCTION AUTH") is bold like every other
-   heading in the row — only the body cells (the login codes) stay at the lighter
-   500 weight above, which .matrix thead th's own 700 would otherwise lose to
-   .col-auth's higher specificity. */
-.matrix thead th.col-auth { font-weight: 700; color: var(--text-primary); }
+/* ---------- Approval auth / Sanction auth are NOT on this table ----------
+   They were two columns here until 2026-09-08, aggregating each member's cases into a set
+   of approver codes. Removed at the user's request and moved down to the drill-down list,
+   where the authority sits beside the case it actually belongs to. The `.auth-code` rule
+   below is still live — the student list uses it. */
 
 /* The login code IS the value here, so it takes full ink and a value's weight — unlike
    .member-code, where the same string is a muted annotation under a name that is already
@@ -672,10 +647,6 @@ h2 { font-size: var(--fs-md); }
   font-variant-numeric: normal;
 }
 
-/* No case has reached this stage in the selected year. An absence, shown as one — the
-   same em dash the student cards use, never a name the database has not recorded, and
-   the same muted treatment .cell-zero gives a nil figure. */
-.matrix td.col-auth.auth-none { color: var(--text-muted); opacity: 0.45; }
 
 .matrix tbody tr:hover td { background: var(--wash); }
 .matrix tbody tr:hover .col-name, .matrix tbody tr:hover .col-sl { background: var(--wash); }
@@ -1131,7 +1102,11 @@ tr.filter-row th {
  * the prose columns document above. */
 .drill-table th.dt-money,
 .drill-table td.dt-money {
-  text-align: center;
+  /* Right-aligned as of 2026-09-08, at the user's request — the units line up under each
+     other, which is how a column of amounts is read and compared. The heading and the
+     totals row take the same alignment: a centred heading over right-aligned figures
+     reads as two columns. */
+  text-align: right;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -1143,7 +1118,28 @@ tr.filter-row th {
    total ("₹49,50,925" is 72px) with room to spare. */
 .drill-table thead th.dt-money { white-space: normal; }
 .dt-money { width: 118px; min-width: 96px; }
-.filter-cell.dt-money .filter-input { text-align: center; }
+.filter-cell.dt-money .filter-input { text-align: right; }
+
+/* The two authority columns, moved off the matrix and onto the student list on
+   2026-09-08. One short login code per cell — narrow, and never wrapped. Written
+   `.drill-table td.dt-auth` for the specificity reason the money block above documents. */
+.drill-table th.dt-auth,
+.drill-table td.dt-auth {
+  text-align: center;
+  white-space: nowrap;
+}
+.dt-auth { width: 96px; }
+
+/* An authority ASSIGNED to the student but who has not signed anything yet — every
+   CREATED case. Shown, because it answers "who is this student with", but never as if it
+   were a decision that has been taken: muted and italic, with "not yet approved" on
+   hover. A dotted underline marks it as a cell carrying an explanation. */
+.drill-table .auth-code.is-assigned {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-style: italic;
+  border-bottom: 1px dotted currentColor;
+}
 
 /* A negative pending — the student has been paid more this year than the year's sanction
    row records, usually because no sanction row was ever written. Never clamped to zero:
