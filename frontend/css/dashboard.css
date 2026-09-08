@@ -590,7 +590,12 @@ h2 { font-size: var(--fs-md); }
   vertical-align: bottom;
 }
 
-.matrix thead th:hover { background: var(--wash); }
+/* Opaque on hover too — the header is sticky, and a heading painted only in the
+   translucent wash shows the body rows scrolling underneath it. */
+.matrix thead th:hover {
+  background-color: var(--surface-1);
+  background-image: linear-gradient(var(--wash), var(--wash));
+}
 
 /* One caret, flipped for descending, so the two directions are the identical shape
    and the header text does not shift when the sort is reversed. */
@@ -649,7 +654,13 @@ h2 { font-size: var(--fs-md); }
 
 
 .matrix tbody tr:hover td { background: var(--wash); }
-.matrix tbody tr:hover .col-name, .matrix tbody tr:hover .col-sl { background: var(--wash); }
+/* The two frozen columns keep an opaque base on hover for the same reason the team band
+   does: `background: var(--wash)` alone would drop --surface-1 and let the status columns
+   slide visibly under the pinned name while the grid is scrolled sideways. */
+.matrix tbody tr:hover .col-name, .matrix tbody tr:hover .col-sl {
+  background-color: var(--surface-1);
+  background-image: linear-gradient(var(--wash), var(--wash));
+}
 
 .cell-zero { color: var(--text-muted); opacity: 0.45; }
 
@@ -701,9 +712,17 @@ h2 { font-size: var(--fs-md); }
 }
 
 /* The team band parks immediately below the locked header (--head-h is measured in
-   renderMatrix), so you always know whether the row you are reading is ETM or ATM. */
+   renderMatrix), so you always know whether the row you are reading is ETM or ATM.
+
+   Its background must be OPAQUE. --wash is rgba(…, 0.035) — a tint, not a surface — and a
+   sticky row painted only in that lets every member row scroll visibly through it, which
+   reads as blurred, doubled text rather than as a locked heading. So: --surface-1 as the
+   real colour, with the wash laid over it as an image so the band still reads as a tinted
+   band and not as another body row. Same reason it needs the left/right rules — sticky
+   left: 0 means columns slide under it horizontally too. */
 .section-row td {
-  background: var(--wash);
+  background-color: var(--surface-1);
+  background-image: linear-gradient(var(--wash), var(--wash));
   font-size: var(--fs-micro);
   font-weight: 700;
   letter-spacing: 0.06em;
