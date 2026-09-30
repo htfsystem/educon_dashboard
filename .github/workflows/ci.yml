@@ -1,0 +1,91 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: lint · format · test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Dashboard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: Dashboard/.nvmrc
+          cache: npm
+          cache-dependency-path: Dashboard/package-lock.json
+
+      - run: npm ci
+
+      - name: Lint (bug-focused rules)
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      # These need no database — every assertion reads the source. They guard the money
+      # and join invariants that CLAUDE.md records, and the script-load order whose
+      # absence once meant a deploy could serve a blank page.
+      - name: Tests
+        run: npm test
+
+      # Production dependencies only: a dev-tool advisory must not block a deploy.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  startup:
+    name: server boots
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Dashboard
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: Dashboard/.nvmrc
+          cache: npm
+          cache-dependency-path: Dashboard/package-lock.json
+      - run: npm ci
+
+      # There is no database in CI, so the pool cannot connect and the account store will
+      # fail to open — that is expected. What this catches is a syntax error, a bad
+      # require, or a module that throws at load time, none of which the tests would see.
+      - name: Load every module without executing the server
+        run: |
+          node -e "
+            require('./backend/services/pipelineService.js');
+            require('./backend/services/codeLabels.js');
+            require('./backend/services/authService.js');
+            console.log('all backend modules load');
+          "
+
+      # The startup guard that stops account writes reaching production must hold.
+      - name: AUTH_DB_NAME must never equal DB_NAME
+        env:
+          DB_NAME: educon_prod
+          AUTH_DB_NAME: educon_prod
+        run: |
+          node -e "
+            const auth = require('./backend/services/authService.js');
+            auth.open()
+              .then(() => { console.error('FAIL: open() accepted AUTH_DB_NAME === DB_NAME'); process.exit(1); })
+              .catch(e => {
+                if (!/must not be the production schema/.test(e.message)) {
+                  console.error('FAIL: wrong error:', e.message); process.exit(1);
+                }
+                console.log('guard holds:', e.message);
+              });
+          "
