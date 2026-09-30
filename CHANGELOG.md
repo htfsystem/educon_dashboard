@@ -45,6 +45,37 @@ configuration or documentation.
   the Linux host agree.
 - **`npm run verify`** — the single command to run before committing.
 
+### Security — fixed
+
+Two authentication defences that were silently not working. Both are behaviour changes;
+both are locked by `__tests__/auth.test.js` (9 tests).
+
+- **`AUTH_ENABLED` now fails CLOSED, and production can never be open.** It previously had
+  to read exactly `true` or every request was served as a full-permission synthetic admin,
+  so an unset Render environment, `1`, `yes`, or `true ` with a trailing space exposed the
+  entire dataset — finance figures included — to any unauthenticated caller, with nothing
+  in the log and only `@guest · admin` in the profile menu as a symptom.
+
+  Now: a missing, empty or malformed value **requires** sign-in; only an explicit
+  `AUTH_ENABLED=false` opts out; and `NODE_ENV=production` overrides even that. The
+  override is logged rather than thrown, because a crash-loop on a mis-set variable is its
+  own outage. The effective posture is printed at boot (`✓ auth ENFORCED` /
+  `⚠ AUTH OPEN`), since it depends on host environment that is not in version control and
+  was otherwise unknowable.
+
+  Verified across 11 environment combinations: every one requires sign-in except an
+  explicit `false` outside production.
+
+- **The anti-enumeration decoy hash was 65 characters; bcrypt requires 60.** `bcryptjs`
+  begins `if (hash.length !== 60) return false` and does no key stretching, so an unknown
+  username answered in ~0ms and a real one in ~62ms — a bimodal split that made
+  `POST /api/auth/login` a reliable username oracle, and the comment describing the
+  defence had never been true. `DECOY_HASH` is now generated at load with an assertion
+  that it is 60 characters.
+
+  Measured on this machine: the gap between an unknown username and a real one went from
+  **62.08ms to 0.66ms**.
+
 ### Fixed
 
 - **3 moderate dependency vulnerabilities** (`qs` array-limit bypass and DoS, reached via
@@ -53,27 +84,27 @@ configuration or documentation.
 - **`NODE_ENV` was undocumented** in `config/.env.example` although it controls the session
   cookie's `Secure` flag. Added, with a note on what its absence costs. Found by
   `env.test.js` on its first run.
+- **`frontend/js/util.js` and `frontend/js/ui.js` are now tracked by git.** Both existed on
+  disk but were never committed, while `index.html` loads `util.js` as its first script and
+  three modules destructure `window.EduConUtil` on their first line. `git commit -am` stages
+  only tracked files, so the most common commit command would have pushed the new
+  `index.html` without them and served a blank page. `assets.test.js` now catches it.
+- **`CLAUDE.md` and `EduCon-Code-Labels_01.xlsx` are now under version control.** Both sat
+  above the git root (`Dashboard/`), so the document holding every data invariant had no
+  history and no backup. A thin `@Dashboard/CLAUDE.md` pointer remains at the workspace root
+  so it still loads automatically.
 
 ### Known — found, not yet fixed
 
 Recorded so they are tracked rather than rediscovered. None is touched by this entry.
 
-- `frontend/js/util.js` and `frontend/js/ui.js` are **untracked by git** while
-  `index.html` loads `util.js` as its first script and three modules destructure
-  `window.EduConUtil` on their first line. A `git commit -am` would push the modified
-  `index.html` without them and serve a blank page. `assets.test.js` now catches it.
-- **`CLAUDE.md` is outside the git root** (`Dashboard/`), so the document holding every
-  data invariant has no history and no backup.
 - **`columns.js` defines 8 columns, CLAUDE.md documents 7** and lists
   `REACHED_CAREER_POINT` as an excluded status while the code reports it as a column
   (`RCP`). The Grand Total on screen and in the export includes it. Found by
-  `contract.test.js` on its first run.
+  `contract.test.js` on its first run. **Decide which is right before the next report goes
+  out** — the code and the documentation currently describe different totals.
 - **`DISTINCT_PAYMENTS` de-duplicates on 5 columns, its comment states a 3-column key.**
   A voucher re-saved with a corrected amount or date is summed twice.
-- **`AUTH_ENABLED` fails open** — any value that is not exactly `true` serves every request
-  as a full-permission admin, with no warning in the log.
-- **The anti-enumeration decoy hash is 65 characters**; bcrypt requires 60, so
-  `bcryptjs` returns early and the timing defence does not run (0ms vs 62ms).
 - **No rate limiting on `/api/auth/login`**, against a 3-character password minimum. Also
   `bcrypt.compareSync` blocks the event loop, so concurrent login attempts stall the app.
 - **`viewer` receives every student's community, family status, gender and food
