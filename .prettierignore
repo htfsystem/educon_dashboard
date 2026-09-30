@@ -7,6 +7,10 @@ data/
 # Not hand-edited, so not hand-formatted.
 backend/services/codeLabels.js
 
+# 100KB of hand-written prose with deliberate line breaks, aligned tables and
+# hanging indents that carry meaning. Prettier reflows all of it. Never format this.
+CLAUDE.md
+
 # ---------------------------------------------------------------------------
 # Incremental adoption.
 #
