@@ -8,18 +8,8 @@
   // The reported columns are defined once, in js/columns.js, because page 1's hero
   // sums the same array. See that file for what is excluded and why.
   const COLUMNS = window.PIPELINE_COLUMNS;
-
-  const GROUP_VAR = {
-    CREATED:                '--seq-2',
-    SCRUTINY_PENDING:       '--seq-3',
-    APPROVAL_PENDING:       '--seq-4',
-    SANCTION_PENDING:       '--seq-5',
-    DISBURSEMENT_PENDING:   '--seq-5',
-    STUDENT_DISBURSED:      '--good',
-    NO_REQUIREMENT_THIS_YEAR: '--text-muted'
-  };
-
-  const colValue = window.colValue;
+  const { colValue, trackedFrom } = window;
+  const { $, esc, getJSON, store, debounce, options } = window.EduConUtil;
 
   /* APPROVAL AUTH / SANCTION AUTH ARE NOT COLUMNS HERE — removed 2026-09-08.
    *
@@ -34,9 +24,9 @@
    * getAuthorities() in pipelineService.js still runs and /api/report still carries
    * `authorities` on every member; nothing on this page reads it. */
 
-  // Member totals count only the tracked columns above — closed / rejected / reached-
-  // career-point and budget-pending cases are excluded from every ETM/ATM count.
-  const memberTotal = m => COLUMNS.reduce((n, c) => n + colValue(c, m.statuses), 0);
+  // Member totals count only the tracked columns — closed / rejected / reached-career-
+  // point and budget-pending cases are excluded from every ETM/ATM count.
+  const memberTotal = m => trackedFrom(m.statuses);
 
   // Column/grand totals come from the server's assignedStatusTotals: an exact, DISTINCT
   // count of real-person-assigned students per status (COUNT(DISTINCT user_id) in SQL).
@@ -46,7 +36,7 @@
   // pseudo-user buckets (rcp/clo/E300/as). assignedStatusTotals is the one number that
   // is both pseudo-user-free and never double-counted.
   const colAssignedTotal = (col, report) => colValue(col, report.assignedStatusTotals);
-  const trackedTotal = report => COLUMNS.reduce((n, c) => n + colAssignedTotal(c, report), 0);
+  const trackedTotal = report => trackedFrom(report.assignedStatusTotals);
 
   const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -65,7 +55,6 @@
     changed: new Set()
   };
 
-  const $ = id => document.getElementById(id);
   const el = {
     main: $('main'), year: $('yearSelect'), team: $('teamSelect'), search: $('searchInput'),
     statusChart: $('statusChart'), stageLegend: $('stageLegend'),
@@ -165,9 +154,9 @@
   function emptyState({ title, note, action }) {
     return `<div class="empty">
       <svg class="ico empty-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoTable"/></svg>
-      <div class="empty-title">${escapeHtml(title)}</div>
-      <p class="empty-note">${escapeHtml(note)}</p>
-      ${action ? `<button class="btn" type="button" id="${action.id}">${escapeHtml(action.label)}</button>` : ''}
+      <div class="empty-title">${esc(title)}</div>
+      <p class="empty-note">${esc(note)}</p>
+      ${action ? `<button class="btn" type="button" id="${action.id}">${esc(action.label)}</button>` : ''}
     </div>`;
   }
 
@@ -229,13 +218,6 @@
   }
 
   // ---------- Data fetching ----------
-  async function getJSON(url) {
-    const res = await fetch(url);
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-    return body;
-  }
-
   async function boot() {
     try {
       const [{ years }, health] = await Promise.all([
@@ -251,9 +233,7 @@
       // The app shell fills this selector before either data page opens; honour a
       // year the user already picked rather than snapping back to the newest one.
       if (!el.year.options.length) {
-        el.year.innerHTML = years
-          .map(y => `<option value="${y.year}">${y.year}</option>`)
-          .join('');
+        el.year.innerHTML = options(years.map(y => y.year));
       }
 
       state.year = el.year.value || years[0].year;
@@ -300,9 +280,6 @@
       setBusy(false);
     }
   }
-
-  const escapeHtml = s => String(s).replace(/[&<>"']/g,
-    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // ---------- Derived views ----------
   function visibleMembers() {
@@ -377,7 +354,7 @@
     data.forEach((d, i) => {
       const y = padT + i * (rowH + gap);
       const w = Math.max(x(d.count), 2);
-      const fill = cssVar(GROUP_VAR[d.col.key] || '--series-1');
+      const fill = cssVar(d.col.cssVar || '--series-1');
 
       svg.appendChild(svgEl('text', {
         class: 'label-text', x: padL - 10, y: y + rowH / 2 + 4, 'text-anchor': 'end'
@@ -398,9 +375,9 @@
       const hit = svgEl('rect', { class: 'hit', x: padL, y: y - gap / 2, width: plotW + padR, height: rowH + gap });
       svg.appendChild(hit);
       attachHover(hit, bar, el.statusChart, `
-        <div class="tooltip-title">${escapeHtml(d.col.label)}</div>
+        <div class="tooltip-title">${esc(d.col.label)}</div>
         <div class="tooltip-row"><b>${d.count}</b> students · ${cohort ? Math.round((d.count / cohort) * 100) : 0}% of tracked cohort</div>
-        <div class="tooltip-row">DB value${d.col.statuses.length > 1 ? 's' : ''}: <b>${escapeHtml(d.col.statuses.join(', '))}</b></div>`);
+        <div class="tooltip-row">DB value${d.col.statuses.length > 1 ? 's' : ''}: <b>${esc(d.col.statuses.join(', '))}</b></div>`);
     });
 
     el.statusChart.replaceChildren(svg);
@@ -434,7 +411,7 @@
   const drill = (colKey, etmId, cls = '') =>
     ` class="is-drill${cls ? ` ${cls}` : ''}${
        state.changed.has(cellKey(etmId, colKey)) ? ' cell-changed' : ''}" tabindex="0"` +
-    ` data-col="${colKey}" data-year="${escapeHtml(state.year)}"` +
+    ` data-col="${colKey}" data-year="${esc(state.year)}"` +
     (etmId ? ` data-etm="${etmId}"` : '') +
     ' title="Show the students behind this number"';
 
@@ -497,7 +474,7 @@
       <th class="col-name" data-sort="name">Team member${arrow('name')}</th>
       <th class="col-total" data-sort="total">Total${arrow('total')}</th>
       ${COLUMNS.map(c =>
-        `<th data-sort="${c.key}" title="${escapeHtml(c.statuses.join(', '))}">${escapeHtml(c.label)}${arrow(c.key)}</th>`).join('')}
+        `<th data-sort="${c.key}" title="${esc(c.statuses.join(', '))}">${esc(c.label)}${arrow(c.key)}</th>`).join('')}
     </tr></thead>`;
 
     let body = '';
@@ -518,9 +495,9 @@
       // data-who names the row for the drill-down's header, so the list can say whose
       // students it is showing without students.js having to re-read the matrix.
       const rowMoved = state.changed.has(cellKey(m.etmId, '__TOTAL__'));
-      body += `<tr class="${rowMoved ? 'row-changed' : ''}" data-who="${escapeHtml(`${m.name} (${m.loginId})`)}">
+      body += `<tr class="${rowMoved ? 'row-changed' : ''}" data-who="${esc(`${m.name} (${m.loginId})`)}">
         <td class="col-sl">${sl}</td>
-        <td class="col-name"><span class="member-name">${escapeHtml(m.name)}</span><span class="member-code">${escapeHtml(m.loginId)}</span></td>
+        <td class="col-name"><span class="member-name">${esc(m.name)}</span><span class="member-code">${esc(m.loginId)}</span></td>
         ${total
           ? `<td${drill('__TOTAL__', m.etmId, 'col-total')}>${total}</td>`
           : `<td class="col-total cell-zero${zeroFlash(m.etmId, '__TOTAL__')}">0</td>`}
@@ -751,14 +728,10 @@
   el.year.addEventListener('change', () => { state.year = el.year.value; loadYear(); });
   el.team.addEventListener('change', () => { state.team = el.team.value; renderMatrix(); });
 
-  let searchTimer;
-  el.search.addEventListener('input', () => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => {
-      state.search = el.search.value;
-      renderMatrix();
-    }, 140);
-  });
+  el.search.addEventListener('input', debounce(() => {
+    state.search = el.search.value;
+    renderMatrix();
+  }, 140));
 
   $('refreshBtn').addEventListener('click', loadYear);
   $('exportExcel').addEventListener('click', exportExcel);
@@ -795,10 +768,8 @@
     if (mode === 'system') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', mode);
 
-    try {
-      if (mode === 'system') localStorage.removeItem('educon-theme');
-      else localStorage.setItem('educon-theme', mode);
-    } catch { /* private mode */ }
+    if (mode === 'system') store.remove('educon-theme');
+    else store.set('educon-theme', mode);
 
     // Charts bake theme colours into their SVG, so they must be redrawn.
     if (state.report) renderAll();
@@ -807,12 +778,10 @@
 
   $('themeBtn').addEventListener('click', () => setTheme(isDark() ? 'light' : 'dark'));
 
-  try {
-    const saved = localStorage.getItem('educon-theme');
-    if (saved === 'light' || saved === 'dark') {
-      document.documentElement.setAttribute('data-theme', saved);
-    }
-  } catch { /* storage unavailable */ }
+  const savedTheme = store.get('educon-theme');
+  if (savedTheme === 'light' || savedTheme === 'dark') {
+    document.documentElement.setAttribute('data-theme', savedTheme);
+  }
 
   // A 'system' preference must follow the OS while the page is open.
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -821,17 +790,13 @@
     document.dispatchEvent(new CustomEvent('educon:theme', { detail: { mode: 'system', dark: isDark() } }));
   });
 
-  let resizeTimer;
-  addEventListener('resize', () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      if (!state.report) return;
-      renderStatusChart();
-      // A narrower window rewraps the header, moving where the team band must park.
-      const headRow = el.table.querySelector('thead tr');
-      if (headRow) el.table.style.setProperty('--head-h', `${headRow.getBoundingClientRect().height}px`);
-    }, 180);
-  });
+  addEventListener('resize', debounce(() => {
+    if (!state.report) return;
+    renderStatusChart();
+    // A narrower window rewraps the header, moving where the team band must park.
+    const headRow = el.table.querySelector('thead tr');
+    if (headRow) el.table.style.setProperty('--head-h', `${headRow.getBoundingClientRect().height}px`);
+  }, 180));
 
   // Two-minute cadence, matching the hero on page 1. The interval skips while the tab
   // is hidden, so returning to it refreshes immediately rather than showing figures

@@ -48,6 +48,7 @@
   --seq-4: #3987e5;
   --seq-5: #256abf;
   --seq-6: #184f95;
+  --seq-7: #7b6bb5;
 
   /* Radii, as one ladder. Every rounded thing picks a rung — previously five values
      were hard-coded past the two tokens (hero 22, login 18, dialog 16, heat cell 3),
@@ -118,6 +119,7 @@
     --seq-4: #2a78d6;
     --seq-5: #3987e5;
     --seq-6: #5598e7;
+    --seq-7: #a99ad4;
 
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
   }
@@ -152,6 +154,7 @@
   --seq-4: #2a78d6;
   --seq-5: #3987e5;
   --seq-6: #5598e7;
+  --seq-7: #a99ad4;
 
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
 }

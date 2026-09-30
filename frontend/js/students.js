@@ -69,16 +69,12 @@
     ? 'All tracked columns'
     : (COLUMNS.find(c => c.key === key) || { label: key }).label;
 
-  const $ = id => document.getElementById(id);
-
-  const esc = s => String(s ?? '').replace(/[&<>"']/g,
-    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-  const money = n => new Intl.NumberFormat('en-IN', {
-    style: 'currency', currency: 'INR', maximumFractionDigits: 0
-  }).format(Number(n) || 0);
+  const { $, esc, money, getJSON, plural, options } = window.EduConUtil;
 
   const can = perm => !!window.EduConUser && window.EduConUser.permissions.includes(perm);
+
+  /** "1 student" / "156 students" — written five different ways before 2026-09-09. */
+  const nStudents = n => `${n} ${plural(n, 'student')}`;
 
   /* A field the database has no answer for. Written as an em dash rather than as the
      word "Unknown": the student did not answer, which is not the same as the dashboard
@@ -100,13 +96,6 @@
   // Lists are keyed by exactly what identifies them, so re-hovering a cell is instant
   // and moving along a row does not re-query. Cleared whenever the matrix reloads.
   const cache = new Map();
-
-  async function getJSON(url) {
-    const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-    return body;
-  }
 
   function fetchList({ year, etmId, colKey }) {
     const key = `${year}|${etmId ?? ''}|${colKey}`;
@@ -481,7 +470,7 @@
     const note = table.tFoot.querySelector('.dt-total-note');
     if (note) {
       note.textContent = rows.length === all.length
-        ? ` · ${all.length} student${all.length === 1 ? '' : 's'}`
+        ? ` · ${nStudents(all.length)}`
         : ` · ${rows.length} of ${all.length} students`;
     }
   }
@@ -576,7 +565,7 @@
       // makes the hover useless for the one row where it matters most.
       const keys = ctx.etmId === null ? [...POP_KEYS, 'handler'] : POP_KEYS;
       popBody.innerHTML = listTable(students, { clickable: false, keys });
-      popFoot.textContent = `${students.length} student${students.length === 1 ? '' : 's'} · click the number for the full list`;
+      popFoot.textContent = `${nStudents(students.length)} · click the number for the full list`;
     } catch (error) {
       if (seq !== popSeq) return;
       popBody.innerHTML = `<p class="drill-empty drill-error">${esc(error.message)}</p>`;
@@ -619,8 +608,7 @@
 
     listTitle.textContent = ctx.colLabel;
     listMeta.textContent = ctx.who;
-    listYear.innerHTML = (window.EduConYears || [ctx.year])
-      .map(y => `<option value="${esc(y)}">${esc(y)}</option>`).join('');
+    listYear.innerHTML = options(window.EduConYears || [ctx.year]);
     listYear.value = latestYear;
 
     if (!listDialog.open) listDialog.showModal();
@@ -631,9 +619,8 @@
   const listVisible = () => (listShown === null ? listTotal : listShown);
 
   function listFootText() {
-    const plural = n => `${n} student${n === 1 ? '' : 's'}`;
     const filtered = listShown !== null && listShown !== listTotal;
-    const count = filtered ? `${listShown} of ${plural(listTotal)}` : plural(listTotal);
+    const count = filtered ? `${listShown} of ${nStudents(listTotal)}` : nStudents(listTotal);
     return can('view:finance')
       ? `${count} · select a student for their academic details and amounts`
       : count;
@@ -649,7 +636,7 @@
     listExportBtn.disabled = n === 0;
     listExportBtn.title = n === 0
       ? 'Nothing to export'
-      : `Download these ${n} student${n === 1 ? '' : 's'} as an Excel sheet`;
+      : `Download these ${nStudents(n)} as an Excel sheet`;
   }
 
   // The list currently loaded, in the order the server sent it. Sorting reorders a copy,
@@ -828,7 +815,7 @@
         v: (filters.length
           ? `Filtered: ${filters.map(f => `${f.label} = ${f.value}`).join('  ·  ')}     ·     ` +
             `${bodyRows.length} of ${listTotal} students`
-          : `All ${listTotal} student${listTotal === 1 ? '' : 's'} in this cell — no filters applied`
+          : `All ${nStudents(listTotal)} in this cell — no filters applied`
         ) + sortNote,
         s: S.info
       }],
@@ -945,9 +932,10 @@
   });
 
   // The size is a preference about how the user likes to read the table, not about one
-  // particular cell, so it persists across openings within the session. It is not
-  // written to storage: localStorage throws outright in some privacy modes, and this is
-  // not worth a try/catch on every open.
+  // particular cell, so it persists across openings within the session — but deliberately
+  // no further. It is a reading posture for the sitting, not a setting to carry between
+  // visits, so it is not written to storage even though EduConUtil.store would make that
+  // safe.
   listDialog.addEventListener('close', syncMaxButton);
   syncMaxButton();
   syncExportButton(false);      // nothing is open yet, so there is nothing to export
@@ -976,8 +964,7 @@
 
       // The academic filter offers only the years this student actually has a record
       // in — every option leads to real figures rather than an empty panel.
-      stuYear.innerHTML = stuDetail.years
-        .map(y => `<option value="${esc(y.academicYear)}">${esc(y.academicYear)}</option>`).join('');
+      stuYear.innerHTML = options(stuDetail.years.map(y => y.academicYear));
 
       // Open on the year the drill-down was taken from, when the student has one.
       const preferred = listCtx && stuDetail.years.some(y => y.academicYear === listCtx.year)

@@ -77,14 +77,24 @@ async function requireYear(req) {
 }
 
 // ---------------------------------------------------------------- authentication
-// Dashboard accounts live in a local SQLite file. educon_prod holds no dashboard
-// credentials and is still only ever read from.
+// Dashboard accounts live in MySQL, in AUTH_DB_NAME (a non-production schema), so an
+// account created once survives every restart and redeploy. educon_prod holds no
+// dashboard credentials and is still only ever read from.
 
-auth.open();
+auth.open()
+  .then(() => console.log(`✓ account store ready — ${auth.AUTH_DB_NAME}.dashboard_users`))
+  .catch(error => console.error(`✗ account store — ${error.message}`));
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body || {};
-  const user = auth.verify(username, password, req.ip);
+
+  let user;
+  try {
+    user = await auth.verify(username, password, req.ip);
+  } catch (error) {
+    console.error(`✗ login — ${error.message}`);
+    return res.status(500).json({ error: 'The account database is unreachable' });
+  }
 
   if (!user) {
     console.log(`✗ login failed — ${username}`);
@@ -116,27 +126,27 @@ app.get('/api/auth/me', (req, res) => {
 // ---------------------------------------------------------------- user management
 
 app.get('/api/users', auth.requirePermission('manage:users'),
-  route(async () => ({ users: auth.listUsers(), roles: auth.ROLES })));
+  route(async () => ({ users: await auth.listUsers(), roles: auth.ROLES })));
 
-app.post('/api/users', auth.requirePermission('manage:users'), (req, res) => {
+app.post('/api/users', auth.requirePermission('manage:users'), async (req, res) => {
   try {
-    res.json({ user: auth.createUser(req.body || {}) });
+    res.json({ user: await auth.createUser(req.body || {}) });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-app.patch('/api/users/:id', auth.requirePermission('manage:users'), (req, res) => {
+app.patch('/api/users/:id', auth.requirePermission('manage:users'), async (req, res) => {
   try {
-    res.json({ user: auth.updateUser(Number(req.params.id), req.body || {}) });
+    res.json({ user: await auth.updateUser(Number(req.params.id), req.body || {}) });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-app.delete('/api/users/:id', auth.requirePermission('manage:users'), (req, res) => {
+app.delete('/api/users/:id', auth.requirePermission('manage:users'), async (req, res) => {
   try {
-    auth.deleteUser(Number(req.params.id));
+    await auth.deleteUser(Number(req.params.id));
     res.json({ ok: true });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -144,7 +154,7 @@ app.delete('/api/users/:id', auth.requirePermission('manage:users'), (req, res) 
 });
 
 app.get('/api/login-history', auth.requirePermission('manage:users'),
-  route(async () => ({ history: auth.loginHistory(50) })));
+  route(async () => ({ history: await auth.loginHistory(50) })));
 
 // ---------------------------------------------------------------- pipeline data
 

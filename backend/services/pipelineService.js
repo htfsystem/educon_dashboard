@@ -379,6 +379,13 @@ async function getYearReport(pool, year) {
     m.authorities = authorities.members[m.etmId] || NO_AUTHORITY;
   }
 
+  // RCP is reported as a column. The Grand Total for it must count ALL students with
+  // that status — including those held only by the `rcp` pseudo-user — so it uses the
+  // whole-cohort figure rather than the assigned-only one.
+  if (totals.REACHED_CAREER_POINT) {
+    assignedStatusTotals.REACHED_CAREER_POINT = totals.REACHED_CAREER_POINT;
+  }
+
   return {
     academicYear: year,
     generatedAt: new Date().toISOString(),
@@ -609,7 +616,13 @@ async function getStudentList(pool, { year, etmId = null, statuses = [], withMon
   if (!statuses.length) return [];
 
   const statusList = statuses.map(() => '?').join(',');
-  const ownerClause = etmId === null ? 'pick.ownerId IS NOT NULL' : 'pick.ownerId = ?';
+  // For the Grand Total (no etmId), students with REACHED_CAREER_POINT may be held only
+  // by the `rcp` pseudo-user, giving them ownerId = NULL. Include them: the RCP column's
+  // Grand Total counts the whole cohort, so its drill-down must too.
+  const rcpIncluded = etmId === null && statuses.includes('REACHED_CAREER_POINT');
+  const ownerClause = etmId === null
+    ? (rcpIncluded ? '(pick.ownerId IS NOT NULL OR pick.status = \'REACHED_CAREER_POINT\')' : 'pick.ownerId IS NOT NULL')
+    : 'pick.ownerId = ?';
 
   // Placeholder order follows the SQL text: the correlated pick (pseudo users) sits in
   // the SELECT list and so binds first, then the year, then the statuses, then the owner.
@@ -680,7 +693,7 @@ async function getStudentList(pool, { year, etmId = null, statuses = [], withMon
         // row names the same handler, which is exactly the member-row case.
         handler: r.handlerLogin
           ? { loginId: r.handlerLogin, name: displayName({ u_fname: r.h_fname, u_lname: r.h_lname, login_id: r.handlerLogin }) }
-          : null,
+          : (r.status === 'REACHED_CAREER_POINT' ? { loginId: 'rcp', name: 'Reached Careerpoint' } : null),
         // Carried on every row, like the handler: the case is what has an approver, so a
         // list opened from a member cell and one opened from the Grand Total row read the
         // same. Who actually signed where the case has been signed; otherwise who is

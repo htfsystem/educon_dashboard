@@ -12,32 +12,13 @@
 (() => {
   'use strict';
 
-  const $ = id => document.getElementById(id);
+  const { $, esc, getJSON: api, num, date, dateTime, clamp, store, options } = window.EduConUtil;
   const state = { user: null, page: null, overview: null, year: null };
 
-  // ---------- HTTP ----------
-
-  async function api(url, options = {}) {
-    // no-store: these figures move during the working day, and a cached 200 would
-    // leave the hero quoting a number the database no longer holds.
-    const res = await fetch(url, {
-      credentials: 'same-origin',
-      cache: 'no-store',
-      headers: options.body ? { 'Content-Type': 'application/json' } : {},
-      ...options
-    });
-
-    // A session that expired mid-visit drops straight back to the login screen
-    // rather than leaving a half-rendered page behind.
-    if (res.status === 401 && state.user) return signedOut();
-
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-    return body;
-  }
-
-  const esc = s => String(s ?? '').replace(/[&<>"']/g,
-    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // A session that expired mid-visit drops straight back to the login screen rather
+  // than leaving a half-rendered page behind. util.js owns the fetch; this is the one
+  // thing it cannot know — what a session is, and where to send the user when it ends.
+  window.EduConUtil.unauthorizedHandler = () => (state.user ? signedOut() : undefined);
 
   const can = perm => !!state.user && state.user.permissions.includes(perm);
 
@@ -244,15 +225,7 @@
   const SIDEBAR_MAX = 400;
   const SIDEBAR_DEFAULT = 244;
 
-  // localStorage throws outright in some privacy modes, so every access is guarded
-  // and simply falls back to the default layout.
-  const store = {
-    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
-    set(k, v) { try { localStorage.setItem(k, v); } catch { /* not critical */ } }
-  };
-
-  const clampWidth = px =>
-    Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(px)));
+  const clampWidth = px => clamp(Math.round(px), SIDEBAR_MIN, SIDEBAR_MAX);
 
   function applyWidth(px) {
     // --sidebar-user-w, not --sidebar-w: see the note in app.css on #appShell.
@@ -374,8 +347,7 @@
   async function loadYears() {
     try {
       const { years } = await api('/api/years');
-      $('yearSelect').innerHTML = years
-        .map(y => `<option value="${esc(y.year)}">${esc(y.year)}</option>`).join('');
+      $('yearSelect').innerHTML = options(years.map(y => y.year));
       state.year = years[0].year;
       $('yearSelect').value = state.year;
     } catch (error) {
@@ -425,21 +397,8 @@
     }
   }
 
-  // The colour each column takes in the stacked pipeline bar and its key. Same
-  // variables the distribution chart uses, so a column is one colour on this page.
-  const SEG_VAR = {
-    CREATED: '--seq-2',
-    SCRUTINY_PENDING: '--seq-3',
-    APPROVAL_PENDING: '--seq-4',
-    SANCTION_PENDING: '--seq-5',
-    DISBURSEMENT_PENDING: '--seq-6',
-    STUDENT_DISBURSED: '--good',
-    NO_REQUIREMENT_THIS_YEAR: '--text-muted'
-  };
-
   function renderOverview() {
     const o = state.overview;
-    const n = v => Number(v ?? 0).toLocaleString();
 
     // Both figures are summed from assignedStatusTotals over the shared column list,
     // which is exactly how the Status Summary builds its Grand Total row. So the
@@ -455,7 +414,7 @@
     window.EduConMotion.count($('statTracked'), tracked);
 
     $('heroHeadline').innerHTML = tracked
-      ? `<em>${n(disbursed)} disbursed</em> so far — ${
+      ? `<em>${num(disbursed)} disbursed</em> so far — ${
           Math.round((disbursed / tracked) * 100)}% of everyone tracked this year.`
       : 'No students tracked in this academic year.';
 
@@ -467,12 +426,12 @@
     // flex-grow carries the proportion, so the bar re-proportions with a transition
     // when the year changes instead of being torn down and rebuilt.
     $('pipeBar').innerHTML = segs.map((s, i) =>
-      `<span style="flex-grow:${s.v};--seg:var(${SEG_VAR[s.c.key]});--i:${i}"
-             title="${esc(s.c.label)}: ${n(s.v)}"></span>`).join('');
+      `<span style="flex-grow:${s.v};--seg:var(${s.c.cssVar});--i:${i}"
+             title="${esc(s.c.label)}: ${num(s.v)}"></span>`).join('');
 
     $('pipeKey').innerHTML = segs.map(s =>
-      `<span class="pipekey-item"><i class="pipekey-dot" style="--seg:var(${SEG_VAR[s.c.key]})"></i>` +
-      `${esc(s.c.label)} <b class="pipekey-n">${n(s.v)}</b></span>`).join('');
+      `<span class="pipekey-item"><i class="pipekey-dot" style="--seg:var(${s.c.cssVar})"></i>` +
+      `${esc(s.c.label)} <b class="pipekey-n">${num(s.v)}</b></span>`).join('');
 
     // No standing explanation here — this node is an error surface only (see the
     // catch blocks above).
@@ -525,7 +484,7 @@
           <td>${u.active
             ? '<span class="state-on"><i class="state-dot"></i>Active</span>'
             : '<span class="state-off"><i class="state-dot"></i>Disabled</span>'}</td>
-          <td>${new Date(u.createdAt).toLocaleDateString()}</td>
+          <td>${date(u.createdAt)}</td>
           <td><div class="row-actions">
             <button class="mini" data-edit="${u.id}" type="button">Edit</button>
             <button class="mini" data-toggle="${u.id}" type="button">${u.active ? 'Disable' : 'Enable'}</button>
@@ -585,7 +544,7 @@
       <thead><tr><th>When</th><th>Username</th><th>Result</th></tr></thead>
       <tbody>${history.map(h => `
         <tr>
-          <td>${new Date(h.at).toLocaleString()}</td>
+          <td>${dateTime(h.at)}</td>
           <td>${esc(h.username)}</td>
           <td>${h.ok
             ? '<span class="state-on"><i class="state-dot"></i>Signed in</span>'

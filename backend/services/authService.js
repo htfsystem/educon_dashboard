@@ -1,9 +1,24 @@
 /**
  * Dashboard authentication — its own user store, entirely separate from educon_prod.
  *
- * educon_prod is never read for credentials and never written to. Dashboard accounts
- * live in a local SQLite file (data/dashboard.db) using Node's built-in node:sqlite,
- * so there is no native module to compile.
+ * educon_prod is never read for credentials and never written to.
+ *
+ * Accounts live in **MySQL**, in a schema alongside educon_prod (default
+ * `educon_test_1`, overridable with AUTH_DB_NAME). They used to live in a local
+ * SQLite file, and on Render that filesystem is ephemeral: every deploy, every
+ * restart and — on the free tier — every 15 minutes of idle destroyed the file, so
+ * accounts created through the Users page vanished and only the ADMIN_USERNAME /
+ * ADMIN_PASSWORD administrator came back, because it is re-seeded from the
+ * environment. A colleague added yesterday could not sign in today. MySQL is the
+ * same database the dashboard already depends on, so an account created once now
+ * survives every restart, indefinitely.
+ *
+ * The `educon` user holds ALL PRIVILEGES on `educon_test_1` and
+ * `educon_testdb_27sep25` (verified 2026-09-09 by creating, writing and dropping a
+ * probe table in each). `educon_prod` is untouched by anything in this file.
+ *
+ * The session signing key lives in the same table, so sessions also survive a
+ * restart without SESSION_SECRET having to be set by hand.
  *
  * Roles:
  *   admin    dashboard + summary + student finance + export + manage users
@@ -11,10 +26,8 @@
  *   viewer   dashboard + summary
  */
 
-const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
-const { DatabaseSync } = require('node:sqlite');
+const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 
 const ROLES = ['admin', 'manager', 'viewer'];
@@ -30,65 +43,163 @@ const PERMISSIONS = {
   viewer:  ['view:dashboard', 'view:summary']
 };
 
-// DATA_DIR is overridable because hosts like Render mount persistent storage outside
-// the repo (e.g. /var/data). Without a mounted disk the platform's filesystem is
-// ephemeral and every account is lost on redeploy — see CLAUDE.md "Deploying".
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
-const DB_FILE = path.join(DATA_DIR, 'dashboard.db');
+// A schema the `educon` user may write to. Never educon_prod — guarded below.
+const AUTH_DB_NAME = process.env.AUTH_DB_NAME || 'educon_test_1';
+
+const USERS_TABLE = 'dashboard_users';
+const LOG_TABLE = 'dashboard_login_log';
+const SETTINGS_TABLE = 'dashboard_settings';
 
 const SESSION_COOKIE = 'educon_session';
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;   // 8 hours
 
-let db = null;
+let pool = null;
+let ready = null;
+let sessionSecret = null;
 
-/** Opens (creating on first run) the local account database. */
+/** The account pool. Separate from server.js's educon_prod pool, on its own schema. */
+function getPool() {
+  if (pool) return pool;
+
+  if (AUTH_DB_NAME === (process.env.DB_NAME || 'educon_prod')) {
+    throw new Error(
+      `AUTH_DB_NAME must not be the production schema (${AUTH_DB_NAME}) — it is written to`
+    );
+  }
+
+  pool = mysql.createPool({
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT) || 3306,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: AUTH_DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 4,
+    queueLimit: 0,
+    timezone: 'Z'
+  });
+  return pool;
+}
+
+/**
+ * Creates the tables if they are absent and seeds the first administrator.
+ * Idempotent, and memoised — every entry point awaits this one promise, so a burst
+ * of requests at boot cannot race two seeds against each other.
+ */
 function open() {
-  if (db) return db;
+  if (ready) return ready;
 
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  db = new DatabaseSync(DB_FILE);
+  ready = (async () => {
+    const p = getPool();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      username   TEXT NOT NULL UNIQUE COLLATE NOCASE,
-      pass_hash  TEXT NOT NULL,
-      full_name  TEXT NOT NULL,
-      role       TEXT NOT NULL,
-      active     INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS login_log (
-      id       INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL,
-      at       TEXT NOT NULL,
-      ip       TEXT,
-      ok       INTEGER NOT NULL
-    );
-  `);
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS ${USERS_TABLE} (
+        id         INT AUTO_INCREMENT PRIMARY KEY,
+        username   VARCHAR(100) NOT NULL,
+        pass_hash  VARCHAR(255) NOT NULL,
+        full_name  VARCHAR(190) NOT NULL,
+        role       VARCHAR(20)  NOT NULL,
+        active     TINYINT(1)   NOT NULL DEFAULT 1,
+        created_at VARCHAR(40)  NOT NULL,
+        UNIQUE KEY uq_username (username)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    `);
+    // utf8mb4_general_ci is case-insensitive, which is what COLLATE NOCASE gave the
+    // SQLite table: "Komal" and "komal" are one account, and the unique key enforces it.
 
-  seedFirstAdmin();
-  return db;
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS ${LOG_TABLE} (
+        id       INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(100) NOT NULL,
+        at       VARCHAR(40)  NOT NULL,
+        ip       VARCHAR(64)  NULL,
+        ok       TINYINT(1)   NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS ${SETTINGS_TABLE} (
+        k VARCHAR(64)   NOT NULL PRIMARY KEY,
+        v VARCHAR(255)  NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    await loadSessionSecret(p);
+    await seedFirstAdmin(p);
+  })();
+
+  // A failed init must not poison the process forever — the next request retries.
+  ready.catch(() => { ready = null; });
+  return ready;
+}
+
+/**
+ * The HMAC key for session cookies. SESSION_SECRET wins when set; otherwise one is
+ * generated once and kept in the settings table, so a restart does not sign everyone
+ * out (which is what the old data/.session-secret file did until Render deleted it).
+ */
+async function loadSessionSecret(p) {
+  if (process.env.SESSION_SECRET) {
+    sessionSecret = process.env.SESSION_SECRET;
+    return;
+  }
+
+  const [rows] = await p.query(`SELECT v FROM ${SETTINGS_TABLE} WHERE k = 'session_secret'`);
+  if (rows.length) {
+    sessionSecret = rows[0].v;
+    return;
+  }
+
+  const generated = crypto.randomBytes(32).toString('hex');
+  // INSERT IGNORE, then re-read: two instances booting together must agree on one key.
+  await p.query(`INSERT IGNORE INTO ${SETTINGS_TABLE} (k, v) VALUES ('session_secret', ?)`,
+                [generated]);
+  const [again] = await p.query(`SELECT v FROM ${SETTINGS_TABLE} WHERE k = 'session_secret'`);
+  sessionSecret = again[0].v;
 }
 
 /**
  * A brand-new install has no accounts and would be unreachable, so the first run
  * creates one admin. The password comes from ADMIN_PASSWORD when set; otherwise a
  * random one is generated and printed once, which is safer than a known default.
+ *
+ * It runs **only when the table is empty**. Now that accounts persist, re-seeding on
+ * every boot would be wrong: it would quietly resurrect a deleted administrator, and
+ * reset a password the team had since changed through the Users page.
+ *
+ * ADMIN_PASSWORD_RESET=true is the recovery hatch for a forgotten password — it
+ * resets ADMIN_USERNAME's password to ADMIN_PASSWORD (and re-enables the account) on
+ * the next boot. Unset it again afterwards.
  */
-function seedFirstAdmin() {
-  const { n } = db.prepare('SELECT COUNT(*) AS n FROM users').get();
-  if (n > 0) return;
-
+async function seedFirstAdmin(p) {
   const username = process.env.ADMIN_USERNAME || 'admin';
+  const [[{ n }]] = await p.query(`SELECT COUNT(*) AS n FROM ${USERS_TABLE}`);
+
+  if (n > 0) {
+    if (String(process.env.ADMIN_PASSWORD_RESET || '').toLowerCase() === 'true'
+        && process.env.ADMIN_PASSWORD) {
+      const [r] = await p.query(
+        `UPDATE ${USERS_TABLE} SET pass_hash = ?, role = 'admin', active = 1 WHERE username = ?`,
+        [bcrypt.hashSync(String(process.env.ADMIN_PASSWORD), 10), username]
+      );
+      console.log(r.affectedRows
+        ? `\n  ADMIN_PASSWORD_RESET — reset the password for "${username}". Unset the variable now.\n`
+        : `\n  ADMIN_PASSWORD_RESET set, but no account named "${username}" exists.\n`);
+    }
+    return;
+  }
+
   const generated = !process.env.ADMIN_PASSWORD;
   const password = process.env.ADMIN_PASSWORD || crypto.randomBytes(9).toString('base64url');
 
-  createUser({ username, password, fullName: 'Dashboard Administrator', role: 'admin' });
+  await insertUser(p, {
+    username, password, fullName: 'Dashboard Administrator', role: 'admin'
+  });
 
   console.log('\n  No dashboard accounts existed — created the first administrator:');
   console.log(`    username: ${username}`);
-  console.log(`    password: ${generated ? `${password}   (generated — save it now)` : '(from ADMIN_PASSWORD)'}\n`);
+  console.log(`    password: ${generated ? `${password}   (generated — save it now)` : '(from ADMIN_PASSWORD)'}`);
+  console.log(`    stored in: ${AUTH_DB_NAME}.${USERS_TABLE} (persistent)\n`);
 }
 
 const rowToUser = row => row && {
@@ -103,13 +214,16 @@ const rowToUser = row => row && {
 
 // ---------- accounts ----------
 
-function listUsers() {
-  return open().prepare('SELECT * FROM users ORDER BY role, username').all().map(rowToUser);
+async function listUsers() {
+  await open();
+  const [rows] = await getPool().query(
+    `SELECT * FROM ${USERS_TABLE} ORDER BY role, username`
+  );
+  return rows.map(rowToUser);
 }
 
-function createUser({ username, password, fullName, role }) {
-  const d = open();
-
+/** The insert itself, shared by createUser and the first-run seed. */
+async function insertUser(p, { username, password, fullName, role }) {
   username = String(username || '').trim();
   if (!username) throw new Error('Username is required');
   if (!password || String(password).length < 3) {
@@ -117,20 +231,35 @@ function createUser({ username, password, fullName, role }) {
   }
   if (!ROLES.includes(role)) throw new Error(`Role must be one of: ${ROLES.join(', ')}`);
 
-  const existing = d.prepare('SELECT id FROM users WHERE username = ?').get(username);
-  if (existing) throw new Error(`Username "${username}" is already taken`);
+  try {
+    await p.query(
+      `INSERT INTO ${USERS_TABLE} (username, pass_hash, full_name, role, active, created_at)
+       VALUES (?, ?, ?, ?, 1, ?)`,
+      [username, bcrypt.hashSync(String(password), 10),
+       String(fullName || username).trim(), role, new Date().toISOString()]
+    );
+  } catch (error) {
+    // The unique key is the authority on collisions, not a prior SELECT — two admins
+    // adding the same colleague at once would both pass that check.
+    if (error.code === 'ER_DUP_ENTRY') throw new Error(`Username "${username}" is already taken`);
+    throw error;
+  }
 
-  d.prepare(`INSERT INTO users (username, pass_hash, full_name, role, active, created_at)
-             VALUES (?, ?, ?, ?, 1, ?)`)
-   .run(username, bcrypt.hashSync(String(password), 10),
-        String(fullName || username).trim(), role, new Date().toISOString());
-
-  return rowToUser(d.prepare('SELECT * FROM users WHERE username = ?').get(username));
+  const [rows] = await p.query(`SELECT * FROM ${USERS_TABLE} WHERE username = ?`, [username]);
+  return rowToUser(rows[0]);
 }
 
-function updateUser(id, { fullName, role, active, password }) {
-  const d = open();
-  const row = d.prepare('SELECT * FROM users WHERE id = ?').get(id);
+async function createUser(input) {
+  await open();
+  return insertUser(getPool(), input || {});
+}
+
+async function updateUser(id, { fullName, role, active, password } = {}) {
+  await open();
+  const p = getPool();
+
+  const [rows] = await p.query(`SELECT * FROM ${USERS_TABLE} WHERE id = ?`, [id]);
+  const row = rows[0];
   if (!row) throw new Error('No such user');
 
   if (role !== undefined && !ROLES.includes(role)) {
@@ -143,69 +272,80 @@ function updateUser(id, { fullName, role, active, password }) {
   // Locking out the last admin would make the dashboard unadministrable.
   const losingAdmin = row.role === 'admin' && ((role && role !== 'admin') || active === false);
   if (losingAdmin) {
-    const { n } = d.prepare("SELECT COUNT(*) AS n FROM users WHERE role='admin' AND active=1").get();
+    const [[{ n }]] = await p.query(
+      `SELECT COUNT(*) AS n FROM ${USERS_TABLE} WHERE role = 'admin' AND active = 1`
+    );
     if (n <= 1) throw new Error('This is the last active administrator — promote another first');
   }
 
-  d.prepare(`UPDATE users SET full_name = ?, role = ?, active = ?, pass_hash = ? WHERE id = ?`)
-   .run(fullName !== undefined ? String(fullName).trim() : row.full_name,
-        role !== undefined ? role : row.role,
-        active !== undefined ? (active ? 1 : 0) : row.active,
-        password !== undefined ? bcrypt.hashSync(String(password), 10) : row.pass_hash,
-        id);
+  await p.query(
+    `UPDATE ${USERS_TABLE} SET full_name = ?, role = ?, active = ?, pass_hash = ? WHERE id = ?`,
+    [fullName !== undefined ? String(fullName).trim() : row.full_name,
+     role !== undefined ? role : row.role,
+     active !== undefined ? (active ? 1 : 0) : row.active,
+     password !== undefined ? bcrypt.hashSync(String(password), 10) : row.pass_hash,
+     id]
+  );
 
-  return rowToUser(d.prepare('SELECT * FROM users WHERE id = ?').get(id));
+  const [after] = await p.query(`SELECT * FROM ${USERS_TABLE} WHERE id = ?`, [id]);
+  return rowToUser(after[0]);
 }
 
-function deleteUser(id) {
-  const d = open();
-  const row = d.prepare('SELECT * FROM users WHERE id = ?').get(id);
+async function deleteUser(id) {
+  await open();
+  const p = getPool();
+
+  const [rows] = await p.query(`SELECT * FROM ${USERS_TABLE} WHERE id = ?`, [id]);
+  const row = rows[0];
   if (!row) throw new Error('No such user');
+
   if (row.role === 'admin') {
-    const { n } = d.prepare("SELECT COUNT(*) AS n FROM users WHERE role='admin' AND active=1").get();
+    const [[{ n }]] = await p.query(
+      `SELECT COUNT(*) AS n FROM ${USERS_TABLE} WHERE role = 'admin' AND active = 1`
+    );
     if (n <= 1) throw new Error('This is the last active administrator — promote another first');
   }
-  d.prepare('DELETE FROM users WHERE id = ?').run(id);
+  await p.query(`DELETE FROM ${USERS_TABLE} WHERE id = ?`, [id]);
 }
 
 // ---------- login ----------
 
-function verify(username, password, ip) {
-  const d = open();
-  const row = d.prepare('SELECT * FROM users WHERE username = ?').get(String(username || '').trim());
+async function verify(username, password, ip) {
+  await open();
+  const p = getPool();
+
+  const [rows] = await p.query(`SELECT * FROM ${USERS_TABLE} WHERE username = ?`,
+                               [String(username || '').trim()]);
+  const row = rows[0];
 
   // Hash even when the user does not exist, so a missing account and a wrong password
   // take the same amount of time and cannot be told apart from outside.
   const hash = row ? row.pass_hash : '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidin';
   const ok = bcrypt.compareSync(String(password || ''), hash) && !!row && row.active === 1;
 
-  d.prepare('INSERT INTO login_log (username, at, ip, ok) VALUES (?, ?, ?, ?)')
-   .run(String(username || ''), new Date().toISOString(), ip || null, ok ? 1 : 0);
+  await p.query(`INSERT INTO ${LOG_TABLE} (username, at, ip, ok) VALUES (?, ?, ?, ?)`,
+                [String(username || '').slice(0, 100), new Date().toISOString(),
+                 ip ? String(ip).slice(0, 64) : null, ok ? 1 : 0]);
 
   return ok ? rowToUser(row) : null;
 }
 
-function loginHistory(limit = 50) {
-  return open().prepare('SELECT * FROM login_log ORDER BY id DESC LIMIT ?').all(limit)
-    .map(r => ({ username: r.username, at: r.at, ip: r.ip, ok: r.ok === 1 }));
+async function loginHistory(limit = 50) {
+  await open();
+  const [rows] = await getPool().query(
+    `SELECT * FROM ${LOG_TABLE} ORDER BY id DESC LIMIT ?`, [Number(limit) || 50]
+  );
+  return rows.map(r => ({ username: r.username, at: r.at, ip: r.ip, ok: r.ok === 1 }));
 }
 
 // ---------- session cookie ----------
 // A signed, self-contained token: no server-side session table to keep in sync, and
-// tampering with the payload invalidates the signature.
+// tampering with the payload invalidates the signature. The key is loaded by open().
 
-function secret() {
-  if (!process.env.SESSION_SECRET) {
-    // Stable across restarts within one install, so sessions survive a reload.
-    const file = path.join(DATA_DIR, '.session-secret');
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    if (!fs.existsSync(file)) fs.writeFileSync(file, crypto.randomBytes(32).toString('hex'));
-    process.env.SESSION_SECRET = fs.readFileSync(file, 'utf8').trim();
-  }
-  return process.env.SESSION_SECRET;
+function sign(data) {
+  if (!sessionSecret) throw new Error('Session secret not loaded — call open() first');
+  return crypto.createHmac('sha256', sessionSecret).update(data).digest('base64url');
 }
-
-const sign = data => crypto.createHmac('sha256', secret()).update(data).digest('base64url');
 
 function issueToken(user) {
   const body = Buffer.from(JSON.stringify({
@@ -215,8 +355,10 @@ function issueToken(user) {
   return `${body}.${sign(body)}`;
 }
 
-function readToken(token) {
+async function readToken(token) {
   if (!token || !token.includes('.')) return null;
+  await open();
+
   const [body, mac] = token.split('.');
 
   const expected = sign(body);
@@ -229,7 +371,8 @@ function readToken(token) {
 
     // Re-read the account so a deactivated or re-roled user loses access immediately,
     // rather than keeping whatever the token was minted with.
-    const row = open().prepare('SELECT * FROM users WHERE id = ?').get(claims.id);
+    const [rows] = await getPool().query(`SELECT * FROM ${USERS_TABLE} WHERE id = ?`, [claims.id]);
+    const row = rows[0];
     if (!row || row.active !== 1) return null;
     return rowToUser(row);
   } catch {
@@ -265,10 +408,19 @@ const OPEN_ACCESS_USER = {
 };
 
 /** Attaches req.user when a valid session cookie is present. Never rejects. */
-function attachUser(req, _res, next) {
-  req.user = AUTH_DISABLED
-    ? OPEN_ACCESS_USER
-    : readToken(req.cookies && req.cookies[SESSION_COOKIE]);
+async function attachUser(req, _res, next) {
+  if (AUTH_DISABLED) {
+    req.user = OPEN_ACCESS_USER;
+    return next();
+  }
+  try {
+    req.user = await readToken(req.cookies && req.cookies[SESSION_COOKIE]);
+  } catch (error) {
+    // An unreachable account database is a 401, never a crash: the login screen and
+    // its static assets still have to load so the failure is visible.
+    console.error(`✗ session lookup — ${error.message}`);
+    req.user = null;
+  }
   next();
 }
 
@@ -282,7 +434,7 @@ const requirePermission = permission => (req, res, next) => {
 };
 
 module.exports = {
-  ROLES, PERMISSIONS, SESSION_COOKIE, SESSION_TTL_MS, AUTH_DISABLED,
+  ROLES, PERMISSIONS, SESSION_COOKIE, SESSION_TTL_MS, AUTH_DISABLED, AUTH_DB_NAME,
   open, listUsers, createUser, updateUser, deleteUser,
   verify, loginHistory, issueToken, attachUser, requirePermission
 };
