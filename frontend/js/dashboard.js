@@ -349,8 +349,6 @@
       }, t));
     });
 
-    const cohort = trackedTotal(r);
-
     data.forEach((d, i) => {
       const y = padT + i * (rowH + gap);
       const w = Math.max(x(d.count), 2);
@@ -376,7 +374,7 @@
       svg.appendChild(hit);
       attachHover(hit, bar, el.statusChart, `
         <div class="tooltip-title">${esc(d.col.label)}</div>
-        <div class="tooltip-row"><b>${d.count}</b> students · ${cohort ? Math.round((d.count / cohort) * 100) : 0}% of tracked cohort</div>
+        <div class="tooltip-row"><b>${d.count}</b> students</div>
         <div class="tooltip-row">DB value${d.col.statuses.length > 1 ? 's' : ''}: <b>${esc(d.col.statuses.join(', '))}</b></div>`);
     });
 
@@ -408,11 +406,13 @@
   const zeroFlash = (etmId, colKey) =>
     state.changed.has(cellKey(etmId, colKey)) ? ' cell-changed' : '';
 
-  const drill = (colKey, etmId, cls = '') =>
+  const drill = (colKey, etmId, cls = '', scope = '', statusSource = '') =>
     ` class="is-drill${cls ? ` ${cls}` : ''}${
        state.changed.has(cellKey(etmId, colKey)) ? ' cell-changed' : ''}" tabindex="0"` +
     ` data-col="${colKey}" data-year="${esc(state.year)}"` +
     (etmId ? ` data-etm="${etmId}"` : '') +
+    (scope ? ` data-scope="${scope}"` : '') +
+    (statusSource ? ` data-status-source="${statusSource}"` : '') +
     ' title="Show the students behind this number"';
 
   /**
@@ -510,14 +510,15 @@
       </tr>`;
     });
 
-    // Each student is attributed to exactly one handler upstream, so this row is a
-    // genuine column total: it equals the sum of the member rows above it. It excludes
-    // students held only by the rcp/clo/E300/as pseudo-user buckets.
+    /* THE FOOTER: Live Total Student + RCP/Closed/Rejected + Grand Total.
+         Live Total Student     assigned students in the 7 reported columns.
+         RCP / Closed / Rejected  profile-based (u_status), whole cohort.
+         Grand Total            Live Total + summary rows. */
     const cohort = trackedTotal(r);
-    const foot = `
+    const liveTotal = `
       <tr class="total-row" data-who="All team members">
         <td class="col-sl"></td>
-        <td class="col-name">Grand Total</td>
+        <td class="col-name">Live Total Student</td>
         ${cohort
           ? `<td${drill('__TOTAL__', null, 'col-total')}>${cohort}</td>`
           : `<td class="col-total cell-zero${zeroFlash(null, '__TOTAL__')}">0</td>`}
@@ -529,7 +530,10 @@
         }).join('')}
       </tr>`;
 
-    el.table.innerHTML = head + `<tbody>${body}</tbody><tfoot>${foot}</tfoot>`;
+    // The RCP / Closed / Rejected rows and the Grand Total row were removed from this
+    // table on 2026-10-09, at the user's request, to make room for new dashboard content.
+    el.table.innerHTML = head
+      + `<tbody>${body}</tbody><tfoot>${liveTotal}</tfoot>`;
     el.table.classList.toggle('heat', state.heatmap);
 
     // Consumed. A sort or a search re-renders this table immediately afterwards, and
@@ -679,14 +683,9 @@
     });
     if (group.length) pushSubtotal(lastTeam, group);
 
-    /* The Grand Total is the server's assignedStatusTotals — a DISTINCT count across the
-       whole cohort, which is deliberately not the sum of the rows above it (205 students
-       are handled by two people). It therefore does not move when the rows are filtered,
-       exactly as on screen. Unlabelled that reads as an arithmetic error in a printed
-       sheet, so when a filter is on, the row says which population it counts. */
     sheet.push({
       cells: [
-        { v: applied.length ? 'Grand Total (all members)' : 'Grand Total', s: S.grandL },
+        { v: applied.length ? 'Live Total Student (all members)' : 'Live Total Student', s: S.grandL },
         { v: '', s: S.grandL }, { v: '', s: S.grandL },
         { v: cohort, s: S.grand },
         ...COLUMNS.map(c => ({ v: colAssignedTotal(c, r), s: S.grand }))

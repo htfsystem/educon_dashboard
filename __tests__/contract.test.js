@@ -26,11 +26,6 @@ function loadBrowserScript(rel) {
 const { PIPELINE_COLUMNS } = loadBrowserScript('js/columns.js');
 
 // The column set as the CODE actually has it, locked so an accidental edit is caught.
-//
-// NOTE — this is 8 columns. CLAUDE.md says 7 in four places and explicitly lists
-// REACHED_CAREER_POINT as an EXCLUDED status that "does not count toward any member
-// total or the Grand Total". The code reports it as a column ('RCP'). The code is the
-// behaviour users see; the doc is stale. Reconcile deliberately, then update this list.
 const EXPECTED_KEYS = [
   'CREATED',
   'SCRUTINY_PENDING',
@@ -38,8 +33,7 @@ const EXPECTED_KEYS = [
   'SANCTION_PENDING',
   'DISBURSEMENT_PENDING',
   'STUDENT_DISBURSED',
-  'NO_REQUIREMENT_THIS_YEAR',
-  'REACHED_CAREER_POINT'
+  'NO_REQUIREMENT_THIS_YEAR'
 ];
 
 test('columns.js exposes PIPELINE_COLUMNS', () => {
@@ -77,10 +71,8 @@ test('no status is claimed by two columns', () => {
 });
 
 test('the statuses excluded from reporting stay excluded', () => {
-  // Recorded business decision. REACHED_CAREER_POINT is documented as excluded too,
-  // but the code reports it — see EXPECTED_KEYS above. Asserting only what holds.
   const reported = new Set(PIPELINE_COLUMNS.flatMap(c => c.statuses));
-  for (const s of ['BUDGET_PENDING', 'REJECTED', 'CASE_CLOSED']) {
+  for (const s of ['BUDGET_PENDING', 'REJECTED', 'CASE_CLOSED', 'REACHED_CAREER_POINT']) {
     assert.ok(!reported.has(s), `${s} must not appear in any reported column`);
   }
 });

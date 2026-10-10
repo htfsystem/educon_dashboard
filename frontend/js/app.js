@@ -385,6 +385,9 @@
     $('heroHeadline').innerHTML =
       '<span class="skeleton sk-line" style="display:block;width:min(28ch,100%)"></span>';
 
+    // Refreshed on the same cadence as the hero, so the two never show different moments.
+    loadAllTime();
+
     try {
       state.overview = await api(`/api/overview?year=${encodeURIComponent(state.year)}`);
       renderOverview();
@@ -438,11 +441,135 @@
     $('heroSub').textContent = '';
   }
 
+  // ---------- Page 1: all-years tiles ----------
+  // Not driven by the year selector. Each figure is a distinct-student count, and each is
+  // a button that opens the exact list behind it, so the tile and its list cannot differ.
+
+  async function loadAllTime() {
+    try {
+      state.allTime = await api('/api/overview/all-time');
+      renderAllTime();
+      $('kpiError').textContent = '';
+    } catch (error) {
+      $('kpiError').textContent = `Could not load the all-years figures: ${error.message}`;
+    }
+  }
+
+  function renderAllTime() {
+    const d = state.allTime;
+    const count = (id, n) => window.EduConMotion.count($(id), n);
+
+    count('kpiRcp', d.rcpTotal);
+    count('kpiClosed', d.closedTotal);
+    count('kpiRejected', d.rejectedTotal);
+    count('kpiLive', d.liveTotal);
+    count('kpiLiveRcp', d.livePlusRcpTotal);
+    count('kpiUnassigned', d.unassignedTotal);
+
+    const L = d.latestStudent;
+    // Just the number — the number only (792), not the code or the name; the sub-line says till date.
+    $('kpiLatestCode').textContent = L ? String(L.number) : '—';
+    $('kpiLatestName').textContent = L ? 'till date' : 'No student found';
+
+    // A tile with nothing behind it is not a link: an empty list would read as a failure.
+    const open = (kpi, on) => { document.querySelector(`[data-kpi="${kpi}"]`).disabled = !on; };
+    // One student's card carries amounts, which is view:finance — same rule as the list rows.
+    open('latest', !!L && can('view:finance'));
+    open('rcp', d.rcpTotal > 0);
+    open('closed', d.closedTotal > 0);
+    open('rejected', d.rejectedTotal > 0);
+    open('live', d.liveTotal > 0);
+    open('liveRcp', d.livePlusRcpTotal > 0);
+    open('unassigned', d.unassignedTotal > 0);
+    document.querySelector('[data-kpi="latest"]').title = L && !can('view:finance')
+      ? 'Opening a student needs finance access' : '';
+
+    const peak = Math.max(1, ...d.rcpByYear.map(y => y.count));
+    $('kpiRcpYears').innerHTML = d.rcpByYear.map(y =>
+      `<button type="button" class="kpi-year" data-year="${esc(y.year)}"` +
+      ` title="Open the ${num(y.count)} RCP students of ${esc(y.year)}">` +
+      `<span class="kpi-year-label">${esc(y.year)}</span>` +
+      `<span class="kpi-year-bar"><i style="width:${(y.count / peak * 100).toFixed(1)}%"></i></span>` +
+      `<b class="kpi-year-n">${num(y.count)}</b></button>`).join('');
+
+    // A student whose case is RCP in two academic years sits in both year rows (the same
+    // rule as the matrix's RCP row, which is why a year opens the very list it counts) but
+    // only once in the total. Said out loud, or the rows would look like an addition error.
+    const sum = d.rcpByYear.reduce((n, y) => n + y.count, 0);
+    $('kpiRcpNote').textContent = sum === d.rcpTotal ? '' :
+      `The years add up to ${num(sum)}: ${num(sum - d.rcpTotal)} students have an RCP case in two ` +
+      `academic years, so each appears under both years but is counted once in the ${num(d.rcpTotal)} total.`;
+
+    // Who they are, so the 160 can be checked by hand. Each opens that student's card.
+    const multi = d.rcpInTwoYears || [];
+    $('kpiRcpMulti').innerHTML = !multi.length ? '' :
+      '<table class="kpi-multi-table"><thead><tr><th>Student ID</th><th>Student</th>' +
+      '<th>RCP in academic years</th></tr></thead><tbody>' +
+      multi.map(s =>
+        `<tr tabindex="0" role="button" data-student="${s.studentId}" data-year="${esc(s.years[0])}"` +
+        ` title="Open ${esc(s.name)}"><td>${esc(s.code)}</td><td>${esc(s.name)}</td>` +
+        `<td>${s.years.map(esc).join(' &amp; ')}</td></tr>`).join('') +
+      '</tbody></table>';
+  }
+
+  const ALL_TIME_LISTS = {
+    live:     { population: 'live',     colLabel: 'Live students' },
+    liveRcp:  { population: 'live_rcp', colLabel: 'Live + Reached Career Point students' },
+    rcp:      { population: 'rcp',      colLabel: 'Reached Career Point students' },
+    closed:   { population: 'closed',   colLabel: 'Closed students' },
+    rejected: { population: 'rejected', colLabel: 'Rejected students' },
+    unassigned: { population: 'unassigned', colLabel: 'Unassigned accounts' }
+  };
+
+  const openMultiRow = row => {
+    // A student card carries amounts (view:finance), same rule as the Latest tile.
+    if (row && can('view:finance')) {
+      window.EduConDrill.openStudent(Number(row.dataset.student), row.dataset.year);
+    }
+  };
+  $('kpiRcpMulti').addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('tr[data-student]');
+    if (!row) return;
+    e.preventDefault();
+    openMultiRow(row);
+  });
+
+  const onKpiClick = e => {
+    const multiRow = e.target.closest('.kpi-multi tr[data-student]');
+    if (multiRow) { openMultiRow(multiRow); return; }
+    const yearBtn = e.target.closest('.kpi-year');
+    if (yearBtn) {
+      window.EduConDrill.openList({
+        ...ALL_TIME_LISTS.rcp, year: yearBtn.dataset.year, who: `Academic year ${yearBtn.dataset.year}`
+      });
+      return;
+    }
+    const btn = e.target.closest('[data-kpi]');
+    if (!btn || btn.disabled || !state.allTime) return;
+    const kpi = btn.dataset.kpi;
+    if (kpi === 'latest') {
+      window.EduConDrill.openStudent(state.allTime.latestStudent.studentId);
+      return;
+    }
+    window.EduConDrill.openList({
+      ...ALL_TIME_LISTS[kpi],
+      who: kpi === 'unassigned'
+        ? 'Not real students — system buckets and test accounts'
+        : 'All academic years · each student counted once'
+    });
+  };
+  $('allTimeKpis').addEventListener('click', onKpiClick);
+  $('kpiRcpYears').addEventListener('click', onKpiClick);
+  $('kpiRcpMulti').addEventListener('click', onKpiClick);
+
   // The dashboard auto-refreshes on a fixed cadence; both the overview and the
   // matrix use it, so the two can never show figures from different moments.
   const REFRESH_MS = 120000;
 
   window.EduConMotion.spotlight(document.querySelector('.bento'));
+  window.EduConMotion.spotlight($('allTimeKpis'));
+  window.EduConMotion.spotlight(document.querySelector('.kpi-years-card'));
 
   // The matrix auto-refreshes every two minutes; the hero is refreshed on the
   // same cadence so the two can never show figures from different moments.

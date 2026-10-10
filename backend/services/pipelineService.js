@@ -16,11 +16,17 @@ const codes = require('./codeLabels');
 
 // System bucket accounts in educon_user_etm_mapping. These are not people — they are
 // holding pens the application assigns cases to. Excluded from the roster.
-const PSEUDO_USERS = ['rcp', 'clo', 'E300', 'as'];
+const PSEUDO_USERS = ['rcp', 'clo', 'E300', 'as', 'rcp1819'];
 
 // Alumni Team Members. The DB `role` table does not separate ATM from ETM (both hold
 // 'sct'/'cm'), so team membership comes from the business roster.
 const ATM_CODES = ['aas', 'apg', 'apps', 'aps', 'ark', 'atk', 'avms', 'ahm', 'aso', 'avs'];
+
+// Team members who currently handle no students (asked for on 2026-10-10). They are left out
+// of the matrix until they do: a year in which one of them holds a student shows them again,
+// with no change here. (rcp1819, "Reached Careerpoint1819", is not one of these - it is a
+// system bucket and lives in PSEUDO_USERS.)
+const DORMANT_MEMBERS = ['ac', 'ap', 'd1', 'dm', 'kdd', 'mg', 'dd2', 'rg', 'sds', 'sms', 'vs', 'atk', 'ng'];
 
 // Agreed capacity per member. This is a commercial agreement, not a DB fact — there is
 // no column for it in educon_prod. Keyed by login_id as it appears in the database.
@@ -56,6 +62,28 @@ const TERMINAL_STATUSES = [
 
 const pseudoList = () => PSEUDO_USERS.map(() => '?').join(',');
 
+/* WHO IS A STUDENT — decided by ROLE, not by the shape of the code (2026-10-09).
+ *
+ * educon_user_profile holds students and staff alike; the app tells them apart with a role
+ * in educon_user_profile_roles (role.id 1 = educon_student, 2 = sct, 3 = cm, 6 = admin).
+ * Every figure that counts students filters on it, so staff accounts that carry a stray
+ * academic row (dd, ks, rcp, ...) can never inflate a count. Two test accounts hold the
+ * student role too (e9999 "Test Kumar", e999) and are excluded by their number; add a number
+ * to DUMMY_STUDENT_NUMBERS to drop another.
+ *
+ * `studentOnly(col)` is a SQL condition on a profile id column, e.g. studentOnly('a.user_id').
+ * Aliases sr / dp are private to it. */
+const STUDENT_ROLE_ID = 1;
+const STUDENT_ROLE_NAME = 'educon_student';
+const ETM_ROLE_IDS = [2, 3];                    // sct, cm — the team members
+const DUMMY_STUDENT_NUMBERS = [9999, 999];
+const studentOnly = col => `(EXISTS (SELECT 1 FROM educon_user_profile_roles sr
+            WHERE sr.users_u_id = ${col} AND sr.roles_id = ${STUDENT_ROLE_ID})
+        AND NOT EXISTS (SELECT 1 FROM educon_user_profile dp
+            WHERE dp.u_id = ${col} AND TRIM(dp.login_id) REGEXP '^[A-Za-z][0-9]+$'
+              AND CAST(SUBSTRING(TRIM(dp.login_id), 2) AS UNSIGNED) IN (${DUMMY_STUDENT_NUMBERS.join(', ')})))`;
+
+/** ETM or ATM — the business roster; the DB has no ATM role. Roles (sct, cm, admin) ride along as m.roles. */
 function classify(loginId) {
   return ATM_CODES.includes(loginId) ? 'ATM' : 'ETM';
 }
@@ -71,10 +99,11 @@ function displayName(row) {
 /** Academic years present in the data, newest first. */
 async function getAcademicYears(pool) {
   const [rows] = await pool.query(`
-    SELECT academic_year AS year, COUNT(DISTINCT user_id) AS students
-    FROM educon_user_academic_details
-    GROUP BY academic_year
-    ORDER BY academic_year DESC
+    SELECT a.academic_year AS year, COUNT(DISTINCT a.user_id) AS students
+    FROM educon_user_academic_details a
+    WHERE ${studentOnly('a.user_id')}
+    GROUP BY a.academic_year
+    ORDER BY a.academic_year DESC
   `);
   return rows.map(r => ({ year: r.year, students: Number(r.students) }));
 }
@@ -91,18 +120,57 @@ async function getStatusCatalog(pool) {
   return [...known, ...extra];
 }
 
+// Students whose profile status is one of these are counted in the summary rows
+// (by u_status) and excluded from the application_status matrix, so they are
+// never double-counted.
+const PROFILE_TERMINAL = "('REACHED_CAREER_POINT', 'CASE_CLOSED', 'REJECTED')";
+
 /** Exact per-status totals for one academic year (whole cohort, no ETM filter). */
 async function getStatusTotals(pool, year) {
   const [rows] = await pool.query(`
-    SELECT application_status AS status, COUNT(DISTINCT user_id) AS count
-    FROM educon_user_academic_details
-    WHERE academic_year = ?
-    GROUP BY application_status
+    SELECT a.application_status AS status, COUNT(DISTINCT a.user_id) AS count
+    FROM educon_user_academic_details a
+    JOIN educon_user_profile ep ON ep.u_id = a.user_id
+    WHERE a.academic_year = ?
+      AND ep.u_status NOT IN ${PROFILE_TERMINAL}
+      AND ${studentOnly('a.user_id')}
+    GROUP BY a.application_status
   `, [year]);
 
   const map = {};
   rows.forEach(r => { map[r.status] = Number(r.count); });
   return map;
+}
+
+/**
+ * Students whose PROFILE status (educon_user_profile.u_status) is REACHED_CAREER_POINT,
+ * counted only among those who have an academic record for the selected year.
+ *
+ * This is a different population from application_status = 'REACHED_CAREER_POINT': the
+ * profile status is set once on the student's profile row, while the case status is per
+ * year and can be anything — STUDENT_DISBURSED, CHANGE_REQUIRED, etc. In 2025-2026 the
+ * profile count is 52 against 20 on the case.
+ */
+async function getProfileStatusCounts(pool, year) {
+  const [rows] = await pool.query(`
+    SELECT p.u_status AS status, COUNT(DISTINCT a.user_id) AS count
+    FROM educon_user_academic_details a
+    JOIN educon_user_profile p ON p.u_id = a.user_id
+    WHERE a.academic_year = ?
+      AND ${studentOnly('a.user_id')}
+      AND p.u_status IN ('REACHED_CAREER_POINT', 'CASE_CLOSED', 'REJECTED')
+      AND (a.application_status = p.u_status
+           OR (NOT EXISTS (
+                 SELECT 1 FROM educon_user_academic_details a2
+                 WHERE a2.user_id = a.user_id AND a2.application_status = p.u_status)
+               AND a.academic_year = (
+                 SELECT MAX(a3.academic_year) FROM educon_user_academic_details a3
+                 WHERE a3.user_id = a.user_id)))
+    GROUP BY p.u_status
+  `, [year]);
+  const counts = {};
+  for (const r of rows) counts[r.status] = Number(r.count);
+  return counts;
 }
 
 /**
@@ -141,7 +209,10 @@ async function getMatrix(pool, year) {
         a.application_status AS status,
         ${OWNER_PICK} AS ownerId
       FROM educon_user_academic_details a
+      JOIN educon_user_profile ep ON ep.u_id = a.user_id
       WHERE a.academic_year = ?
+        AND ep.u_status NOT IN ${PROFILE_TERMINAL}
+        AND ${studentOnly('a.user_id')}
     ) pick
     INNER JOIN educon_user_profile p ON p.u_id = pick.ownerId
     GROUP BY p.u_id, p.login_id, p.u_fname, p.u_lname, pick.status
@@ -155,6 +226,7 @@ async function getMatrix(pool, year) {
         loginId: r.loginId,
         name: displayName(r),
         team: classify(r.loginId),
+        roles: [],
         agreedMax: AGREED_MAX[r.loginId] ?? null,
         statuses: {},
         total: 0
@@ -167,13 +239,22 @@ async function getMatrix(pool, year) {
 
   // Members on the roster with zero students this year still deserve a row, so the
   // table shape stays stable as the year filter changes.
+  // The roster is everyone holding the sct or cm role (the team members), not merely
+  // whoever happens to be mapped to a student — so a member with no students this year still
+  // has a row, and the roles each one holds are known.
   const [roster] = await pool.query(`
-    SELECT DISTINCT p.u_id AS etmId, p.login_id AS loginId, p.u_fname, p.u_lname
-    FROM educon_user_etm_mapping m
-    INNER JOIN educon_user_profile p ON p.u_id = m.etm_id
+    SELECT p.u_id AS etmId, p.login_id AS loginId, p.u_fname, p.u_lname,
+           GROUP_CONCAT(DISTINCT r.name ORDER BY r.id SEPARATOR ',') AS roles
+    FROM educon_user_profile p
+    JOIN educon_user_profile_roles pr ON pr.users_u_id = p.u_id AND pr.roles_id IN (${[...ETM_ROLE_IDS, 6].join(', ')})
+    JOIN role r ON r.id = pr.roles_id
     WHERE p.login_id NOT IN (${pseudoList()})
+      AND EXISTS (SELECT 1 FROM educon_user_profile_roles tm
+                   WHERE tm.users_u_id = p.u_id AND tm.roles_id IN (${ETM_ROLE_IDS.join(', ')}))
+    GROUP BY p.u_id, p.login_id, p.u_fname, p.u_lname
   `, PSEUDO_USERS);
 
+  const rolesOf = new Map(roster.map(r => [r.etmId, String(r.roles).split(',')]));
   for (const r of roster) {
     if (!members.has(r.etmId)) {
       members.set(r.etmId, {
@@ -181,11 +262,18 @@ async function getMatrix(pool, year) {
         loginId: r.loginId,
         name: displayName(r),
         team: classify(r.loginId),
+        roles: [],
         agreedMax: AGREED_MAX[r.loginId] ?? null,
         statuses: {},
         total: 0
       });
     }
+  }
+  for (const m of members.values()) m.roles = rolesOf.get(m.etmId) || [];
+
+  // A dormant member appears only in a year in which they hold at least one student.
+  for (const [etmId, m] of members) {
+    if (DORMANT_MEMBERS.includes(m.loginId) && m.total === 0) members.delete(etmId);
   }
 
   const list = [...members.values()].sort((a, b) => {
@@ -209,8 +297,11 @@ async function getAssignedStatusTotals(pool, year) {
     FROM educon_user_academic_details a
     INNER JOIN educon_user_etm_mapping m ON m.s_id = a.user_id
     INNER JOIN educon_user_profile p ON p.u_id = m.etm_id
+    JOIN educon_user_profile sp ON sp.u_id = a.user_id
     WHERE a.academic_year = ?
       AND p.login_id NOT IN (${pseudoList()})
+      AND sp.u_status NOT IN ${PROFILE_TERMINAL}
+      AND ${studentOnly('a.user_id')}
     GROUP BY a.application_status
   `, [year, ...PSEUDO_USERS]);
 
@@ -273,7 +364,10 @@ async function getAuthorities(pool, year) {
         a.academic_year AS academicYear,
         ${OWNER_PICK}   AS ownerId
       FROM educon_user_academic_details a
+      JOIN educon_user_profile ep ON ep.u_id = a.user_id
       WHERE a.academic_year = ?
+        AND ep.u_status NOT IN ${PROFILE_TERMINAL}
+        AND ${studentOnly('a.user_id')}
     ) pick
     LEFT JOIN educon_student_first_level_approval fl ON fl.s_id = pick.caseId
     LEFT JOIN (
@@ -338,8 +432,12 @@ const NO_AUTHORITY = { approval: [], sanction: [] };
  */
 async function getReconciliation(pool, year) {
   const [[cohort]] = await pool.query(`
-    SELECT COUNT(DISTINCT user_id) AS total
-    FROM educon_user_academic_details WHERE academic_year = ?
+    SELECT COUNT(DISTINCT a.user_id) AS total
+    FROM educon_user_academic_details a
+    JOIN educon_user_profile ep ON ep.u_id = a.user_id
+    WHERE a.academic_year = ?
+      AND ep.u_status NOT IN ${PROFILE_TERMINAL}
+      AND ${studentOnly('a.user_id')}
   `, [year]);
 
   const [[assigned]] = await pool.query(`
@@ -347,8 +445,11 @@ async function getReconciliation(pool, year) {
     FROM educon_user_academic_details a
     INNER JOIN educon_user_etm_mapping m ON m.s_id = a.user_id
     INNER JOIN educon_user_profile p ON p.u_id = m.etm_id
+    JOIN educon_user_profile sp ON sp.u_id = a.user_id
     WHERE a.academic_year = ?
       AND p.login_id NOT IN (${pseudoList()})
+      AND sp.u_status NOT IN ${PROFILE_TERMINAL}
+      AND ${studentOnly('a.user_id')}
   `, [year, ...PSEUDO_USERS]);
 
   const cohortTotal = Number(cohort.total);
@@ -364,26 +465,20 @@ async function getReconciliation(pool, year) {
 
 /** Everything one dashboard render needs, in a single round trip. */
 async function getYearReport(pool, year) {
-  const [statuses, members, totals, assignedStatusTotals, reconciliation, authorities] = await Promise.all([
+  const [statuses, members, totals, assignedStatusTotals, reconciliation, authorities, profileStatusCounts] = await Promise.all([
     getStatusCatalog(pool),
     getMatrix(pool, year),
     getStatusTotals(pool, year),
     getAssignedStatusTotals(pool, year),
     getReconciliation(pool, year),
-    getAuthorities(pool, year)
+    getAuthorities(pool, year),
+    getProfileStatusCounts(pool, year)
   ]);
 
   const rowSum = members.reduce((s, m) => s + m.total, 0);
 
   for (const m of members) {
     m.authorities = authorities.members[m.etmId] || NO_AUTHORITY;
-  }
-
-  // RCP is reported as a column. The Grand Total for it must count ALL students with
-  // that status — including those held only by the `rcp` pseudo-user — so it uses the
-  // whole-cohort figure rather than the assigned-only one.
-  if (totals.REACHED_CAREER_POINT) {
-    assignedStatusTotals.REACHED_CAREER_POINT = totals.REACHED_CAREER_POINT;
   }
 
   return {
@@ -393,6 +488,7 @@ async function getYearReport(pool, year) {
     terminalStatuses: TERMINAL_STATUSES,
     statusTotals: totals,
     assignedStatusTotals,
+    profileStatusCounts,
     members,
     reconciliation: { ...reconciliation, memberRowSum: rowSum }
   };
@@ -521,13 +617,15 @@ const isPseudo = loginId => PSEUDO_USERS.includes(loginId);
 /**
  * One authority. The actual signer where the case has one; otherwise the authority
  * assigned on the student's profile, marked as such. Null when neither is available or
- * the assigned one is a holding-pen account.
+ * the assigned one is a holding-pen account (except 'rcp', which is shown — its auth
+ * columns carry real meaning on students assigned to the RCP bucket).
  */
 const authority = (code, fname, lname, planned) => {
   if (code) {
     return { loginId: code, name: displayName({ u_fname: fname, u_lname: lname, login_id: code }), assigned: false };
   }
-  if (!planned || !planned.login_id || isPseudo(planned.login_id)) return null;
+  if (!planned || !planned.login_id) return null;
+  if (isPseudo(planned.login_id) && planned.login_id !== 'rcp') return null;
   return {
     loginId: planned.login_id,
     name: displayName({ u_fname: planned.fname, u_lname: planned.lname, login_id: planned.login_id }),
@@ -612,17 +710,57 @@ function studentName(row) {
  * ones getStudentDetail uses — MAX for the sanction, a sum over DISTINCT_PAYMENTS for the
  * disbursement — so a student's row in this list and their own card cannot disagree.
  */
-async function getStudentList(pool, { year, etmId = null, statuses = [], withMoney = false }) {
+async function getStudentList(pool, { year, etmId = null, statuses = [], withMoney = false, scope = 'assigned', statusSource = 'case' }) {
   if (!statuses.length) return [];
 
   const statusList = statuses.map(() => '?').join(',');
-  // For the Grand Total (no etmId), students with REACHED_CAREER_POINT may be held only
-  // by the `rcp` pseudo-user, giving them ownerId = NULL. Include them: the RCP column's
-  // Grand Total counts the whole cohort, so its drill-down must too.
-  const rcpIncluded = etmId === null && statuses.includes('REACHED_CAREER_POINT');
+
+  /* WHICH POPULATION. `scope` is passed in by the caller rather than inferred from the
+     statuses, so the number on screen and the list behind it are driven by the same
+     decision. A member cell always means that member, whatever the scope says.
+       assigned   — students a real person handles. The member rows and Live Total Student.
+       unassigned — students held only by a pseudo-user bucket (rcp/clo/E300/as), so
+                    OWNER_PICK found nobody. The "Unassigned (no ETM)" row.
+       all        — both. The RCP / Closed / Rejected rows and the Grand Total, which
+                    count the whole cohort because those cases are mostly parked on a
+                    holding-pen account and would otherwise read as zero. */
+  const SCOPE_CLAUSE = {
+    assigned:   'pick.ownerId IS NOT NULL',
+    unassigned: 'pick.ownerId IS NULL',
+    all:        '1=1'
+  };
   const ownerClause = etmId === null
-    ? (rcpIncluded ? '(pick.ownerId IS NOT NULL OR pick.status = \'REACHED_CAREER_POINT\')' : 'pick.ownerId IS NOT NULL')
+    ? (SCOPE_CLAUSE[scope] || SCOPE_CLAUSE.assigned)
     : 'pick.ownerId = ?';
+
+  /* STATUS SOURCE.
+       case    — the default: filter on application_status (per-year case status).
+       profile — filter on educon_user_profile.u_status (profile-level status). Used for
+                 the RCP summary row, because the profile records who has reached career
+                 point even when the year's case status says something else.
+       grand   — the Grand Total: matches students whose application_status is in the list
+                 OR whose u_status is REACHED_CAREER_POINT. Covers both populations without
+                 double-counting (DISTINCT). */
+  const useProfile = statusSource === 'profile';
+  const useGrand   = statusSource === 'grand';
+
+  const profileJoin = (useProfile || useGrand)
+    ? 'JOIN educon_user_profile pf ON pf.u_id = a.user_id'
+    : 'JOIN educon_user_profile pf ON pf.u_id = a.user_id';
+
+  const FALLBACK_LATEST = `(NOT EXISTS (
+              SELECT 1 FROM educon_user_academic_details ax
+              WHERE ax.user_id = a.user_id AND ax.application_status = pf.u_status)
+            AND a.academic_year = (
+              SELECT MAX(ay.academic_year) FROM educon_user_academic_details ay
+              WHERE ay.user_id = a.user_id))`;
+
+  const statusFilter = useProfile
+    ? `pf.u_status IN (${statusList}) AND (a.application_status = pf.u_status OR ${FALLBACK_LATEST})`
+    : useGrand
+      ? `((a.application_status IN (${statusList}) AND pf.u_status NOT IN ${PROFILE_TERMINAL})
+          OR (pf.u_status IN ${PROFILE_TERMINAL} AND (a.application_status = pf.u_status OR ${FALLBACK_LATEST})))`
+      : `a.application_status IN (${statusList}) AND pf.u_status NOT IN ${PROFILE_TERMINAL}`;
 
   // Placeholder order follows the SQL text: the correlated pick (pseudo users) sits in
   // the SELECT list and so binds first, then the year, then the statuses, then the owner.
@@ -640,7 +778,22 @@ async function getStudentList(pool, { year, etmId = null, statuses = [], withMon
                    AND f.academic_year = pick.academicYear), 0) AS sanctioned,
       COALESCE((SELECT SUM(d.pt_amount_disbursed) FROM (${DISTINCT_PAYMENTS}) d
                  WHERE d.s_id = pick.user_id
-                   AND d.pt_academic_year = pick.academicYear), 0) AS disbursed` : '';
+                   AND d.pt_academic_year = pick.academicYear), 0) AS disbursed,
+      COALESCE((SELECT COUNT(DISTINCT d2.pt_academic_year) FROM (${DISTINCT_PAYMENTS}) d2
+                 WHERE d2.s_id = pick.user_id), 0) AS supportYears,
+      COALESCE((SELECT SUM(d3.pt_amount_disbursed) FROM (${DISTINCT_PAYMENTS}) d3
+                 WHERE d3.s_id = pick.user_id), 0) AS cumulativeDisbursed` : '';
+
+  /* Pseudo handler fallback: when OWNER_PICK found no real person, find which pseudo-user
+     bucket (rcp/clo/E300/as) the student is mapped to. Literal strings, no placeholders. */
+  const PSEUDO_PICK = `
+      (SELECT m3.etm_id
+         FROM educon_user_etm_mapping m3
+         INNER JOIN educon_user_profile p3 ON p3.u_id = m3.etm_id
+        WHERE m3.s_id = a.user_id
+          AND p3.login_id IN ('rcp','clo','E300','as','rcp1819')
+        ORDER BY m3.etm_id ASC
+        LIMIT 1)`;
 
   const [rows] = await pool.query(`
     SELECT
@@ -649,10 +802,17 @@ async function getStudentList(pool, { year, etmId = null, statuses = [], withMon
       pick.status,
       sp.login_id       AS studentCode,
       sp.u_fname, sp.u_lname,
+      sp.u_status       AS profileStatus,
       pd.sp_fname, pd.sp_lname,
       h.login_id        AS handlerLogin,
       h.u_fname         AS h_fname,
       h.u_lname         AS h_lname,
+      ph.login_id       AS pseudoHandlerLogin,
+      ph.u_fname        AS ph_fname,
+      ph.u_lname        AS ph_lname,
+      (SELECT GROUP_CONCAT(DISTINCT hr.name ORDER BY hr.id SEPARATOR ',')
+         FROM educon_user_profile_roles hpr JOIN role hr ON hr.id = hpr.roles_id
+        WHERE hpr.users_u_id = pick.ownerId AND hpr.roles_id IN (${ETM_ROLE_IDS.join(', ')})) AS handlerRoles,
       fl.approval_id             AS approvalCode,
       ap.u_fname AS ap_fname, ap.u_lname AS ap_lname,
       san.sanctioning_authority_id AS sanctionCode,
@@ -666,14 +826,18 @@ async function getStudentList(pool, { year, etmId = null, statuses = [], withMon
         a.s_id                AS caseId,
         a.academic_year       AS academicYear,
         a.application_status  AS status,
-        ${OWNER_PICK}         AS ownerId
+        ${OWNER_PICK}         AS ownerId,
+        ${PSEUDO_PICK}        AS pseudoOwnerId
       FROM educon_user_academic_details a
+      ${profileJoin}
       WHERE a.academic_year = ?
-        AND a.application_status IN (${statusList})
+        AND ${statusFilter}
+        AND ${studentOnly('a.user_id')}
     ) pick
     LEFT JOIN educon_user_profile sp ON sp.u_id = pick.user_id
     LEFT JOIN educon_student_personal_details pd ON pd.s_id = pick.user_id
     LEFT JOIN educon_user_profile h  ON h.u_id  = pick.ownerId
+    LEFT JOIN educon_user_profile ph ON ph.u_id = pick.pseudoOwnerId
     ${AUTHORITY_JOINS}
     ${PROFILE_JOINS.replace('%CASE%', 'pick.caseId').replace('%STUDENT%', 'pick.user_id')}
     WHERE ${ownerClause}
@@ -685,15 +849,20 @@ async function getStudentList(pool, { year, etmId = null, statuses = [], withMon
         studentId: r.studentId,
         caseId: r.caseId,
         code: r.studentCode || String(r.studentId),
+        role: STUDENT_ROLE_NAME,
         name: studentName(r),
-        status: r.status,
-        // Carried on every row, not only on the Grand Total: the same list is reachable
-        // from a member row too, and a column that appeared and vanished depending on
-        // which cell you came from would read as a bug. The client hides it when every
-        // row names the same handler, which is exactly the member-row case.
+        status: useProfile
+          ? (r.profileStatus || r.status)
+          : (useGrand && ['REACHED_CAREER_POINT', 'CASE_CLOSED', 'REJECTED'].includes(r.profileStatus))
+            ? r.profileStatus
+            : r.status,
+        profileStatus: r.profileStatus || null,
         handler: r.handlerLogin
-          ? { loginId: r.handlerLogin, name: displayName({ u_fname: r.h_fname, u_lname: r.h_lname, login_id: r.handlerLogin }) }
-          : (r.status === 'REACHED_CAREER_POINT' ? { loginId: 'rcp', name: 'Reached Careerpoint' } : null),
+          ? { loginId: r.handlerLogin, name: displayName({ u_fname: r.h_fname, u_lname: r.h_lname, login_id: r.handlerLogin }),
+            roles: r.handlerRoles ? String(r.handlerRoles).split(',') : [] }
+          : r.pseudoHandlerLogin
+            ? { loginId: r.pseudoHandlerLogin, name: displayName({ u_fname: r.ph_fname, u_lname: r.ph_lname, login_id: r.pseudoHandlerLogin }), pseudo: true }
+            : null,
         // Carried on every row, like the handler: the case is what has an approver, so a
         // list opened from a member cell and one opened from the Grand Total row read the
         // same. Who actually signed where the case has been signed; otherwise who is
@@ -716,7 +885,342 @@ async function getStudentList(pool, { year, etmId = null, statuses = [], withMon
         // Pending stays signed for the same reason it does on the student card: some
         // students are paid more in a year than that year's sanction row records, and a
         // column of clamped zeroes would hide it. The UI relabels rather than rounds.
-        row.money = { sanctioned, disbursed, pending: sanctioned - disbursed };
+        row.money = {
+          sanctioned, disbursed, pending: sanctioned - disbursed,
+          supportYears: Number(r.supportYears),
+          cumulativeDisbursed: Number(r.cumulativeDisbursed)
+        };
+      }
+      return row;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// ------------------------------------------------------------- all-time (every year)
+//
+// The figures above are all scoped to one academic year. These are not: they answer
+// "how many students, ever" and count each student ONCE however many years they appear in.
+// Population is decided by the PROFILE status (educon_user_profile.u_status) — one value
+// per student — so a student with five year-rows cannot be counted five times.
+
+// DUMMY_STUDENT_NUMBERS (e9999 "Test Kumar", e999) is declared at the top with studentOnly().
+
+/* A REAL STUDENT. educon_user_profile holds students AND staff, and 46 staff accounts
+   (dd, ks, rcp, clo, as, ...) carry a stray CREATED academic row each, so without this
+   they are counted as "live students". A student's code is one letter and digits (e617,
+   E747; one is stored padded as ' e682 ', hence TRIM) and a student is never a handler in
+   educon_user_etm_mapping — that also drops E300, the one pseudo-user shaped like a student.
+   Verified 2026-10-08: 217 -> 170 live, 372 -> 325 live + RCP, RCP unchanged at 155.
+   Since 2026-10-09 the dummy numbers (e9999 "Test Kumar", e999) are not real students either:
+   they were being counted as live / rejected students. They, with every other account this
+   rejects, are listed under "Unassigned Accounts" (getUnassignedAccounts). */
+const REAL_STUDENT = studentOnly('p.u_id');
+
+// Every profile REAL_STUDENT rejects — the "unassigned accounts".
+const NOT_REAL_STUDENT = `(p.login_id IS NULL OR NOT (${REAL_STUDENT}))`;
+
+// The "Unassigned accounts" list is only the system buckets (rcp, clo, E300, as) and the test
+// accounts (a student-shaped code with a dummy number, e.g. e9999). Team members and other
+// staff are not students either, but were removed from the list on 2026-10-09 at the user's
+// request. Needs the PSEUDO_USERS placeholders bound once wherever it is used.
+const UNASSIGNED_ACCOUNT = `${NOT_REAL_STUDENT}
+      AND (p.login_id IN (${pseudoList()})
+           OR EXISTS (SELECT 1 FROM educon_user_profile_roles tr
+                       WHERE tr.users_u_id = p.u_id AND tr.roles_id = ${STUDENT_ROLE_ID}))`;
+
+// population -> profile-status filter. Literals, never user input.
+const ALL_TIME_POPULATIONS = {
+  live:     `p.u_status NOT IN ${PROFILE_TERMINAL}`,
+  live_rcp: `p.u_status NOT IN ('CASE_CLOSED', 'REJECTED')`,
+  rcp:      `p.u_status = 'REACHED_CAREER_POINT'`,
+  closed:   `p.u_status = 'CASE_CLOSED'`,
+  rejected: `p.u_status = 'REJECTED'`
+};
+
+/**
+ * The latest real student ID (login_id like "e792"): the highest number in the running
+ * sequence. Not simply the largest number — e987 is a hand-entered outlier that would show
+ * forever — and not the newest u_id either (old codes such as e485 get re-created late). The
+ * next registrations (e793, e794, ...) extend the run and take over automatically.
+ * Dummy numbers are excluded by the student filter. Only profiles that also have an
+ * academic record qualify, so the student can be opened.
+ */
+const LATEST_RUN_GAP = 10;
+async function getLatestStudent(pool) {
+  const [rows] = await pool.query(`
+    SELECT p.u_id AS studentId, TRIM(p.login_id) AS studentCode, p.u_fname, p.u_lname,
+           CAST(SUBSTRING(TRIM(p.login_id), 2) AS UNSIGNED) AS num
+    FROM educon_user_profile p
+    WHERE ${REAL_STUDENT}
+      AND TRIM(p.login_id) REGEXP '^[A-Za-z][0-9]+$'
+      AND CAST(SUBSTRING(TRIM(p.login_id), 2) AS UNSIGNED) NOT IN (?)
+      AND EXISTS (SELECT 1 FROM educon_user_academic_details a WHERE a.user_id = p.u_id)
+    ORDER BY num DESC
+  `, [DUMMY_STUDENT_NUMBERS]);
+
+  // The highest number that belongs to the running sequence: another real student must sit
+  // within LATEST_RUN_GAP numbers below it. A lone hand-entered code (e987, 195 above the
+  // run) has nobody beside it and is skipped; e793, e794, ... extend the run and take over.
+  const numbers = new Set(rows.map(r => Number(r.num)));
+  const inRun = n => { for (let m = n - 1; m >= n - LATEST_RUN_GAP; m -= 1) if (numbers.has(m)) return true; return false; };
+  const row = rows.find(r => inRun(Number(r.num)));
+  if (!row) return null;
+  return {
+    studentId: row.studentId,
+    code: row.studentCode,
+    number: Number(row.num),
+    name: studentName(row)
+  };
+}
+
+/**
+ * Distinct-student totals across every year, plus RCP per year.
+ *
+ * rcpTotal is a DISTINCT count, deliberately not the sum of rcpByYear: the per-year rows
+ * use the same attribution as the matrix's RCP footer (so a year's number equals the list
+ * behind it), and a student whose case is RCP in two years sits in both rows. The sum is
+ * therefore >= the distinct total, and the client says so.
+ */
+async function getAllTimeTotals(pool) {
+  const [[t]] = await pool.query(`
+    SELECT
+      COUNT(DISTINCT CASE WHEN ${ALL_TIME_POPULATIONS.live}     THEN a.user_id END) AS live,
+      COUNT(DISTINCT CASE WHEN ${ALL_TIME_POPULATIONS.live_rcp} THEN a.user_id END) AS liveRcp,
+      COUNT(DISTINCT CASE WHEN ${ALL_TIME_POPULATIONS.rcp}      THEN a.user_id END) AS rcp,
+      COUNT(DISTINCT CASE WHEN ${ALL_TIME_POPULATIONS.closed}   THEN a.user_id END) AS closed,
+      COUNT(DISTINCT CASE WHEN ${ALL_TIME_POPULATIONS.rejected} THEN a.user_id END) AS rejected
+    FROM educon_user_academic_details a
+    JOIN educon_user_profile p ON p.u_id = a.user_id
+    WHERE ${REAL_STUDENT}
+  `);
+
+  const [[u]] = await pool.query(`
+    SELECT COUNT(*) AS n FROM educon_user_profile p WHERE ${UNASSIGNED_ACCOUNT}
+  `, [...PSEUDO_USERS]);
+
+  // One profile status (bound as `?`) attributed to years the way the matrix did, for real
+  // students only. getAllTimeStudentList({ year }) applies the very same rule, so a year's
+  // figure equals the list its click opens.
+  const YEAR_ROWS = `
+    FROM educon_user_academic_details a
+    JOIN educon_user_profile p ON p.u_id = a.user_id
+    WHERE p.u_status = ?
+      AND ${REAL_STUDENT}
+      AND (a.application_status = p.u_status
+           OR (NOT EXISTS (
+                 SELECT 1 FROM educon_user_academic_details a2
+                 WHERE a2.user_id = a.user_id AND a2.application_status = p.u_status)
+               AND a.academic_year = (
+                 SELECT MAX(a3.academic_year) FROM educon_user_academic_details a3
+                 WHERE a3.user_id = a.user_id)))`;
+
+  const perYear = async status => {
+    const [rows] = await pool.query(`
+      SELECT a.academic_year AS year, COUNT(DISTINCT a.user_id) AS count
+      ${YEAR_ROWS}
+      GROUP BY a.academic_year
+      ORDER BY a.academic_year DESC
+    `, [status]);
+    return rows.map(r => ({ year: r.year, count: Number(r.count) }));
+  };
+  const rcpByYear = await perYear('REACHED_CAREER_POINT');
+
+  // The students who make the year rows add up to more than the total: RCP in 2+ years.
+  const [multi] = await pool.query(`
+    SELECT a.user_id AS studentId, TRIM(p.login_id) AS studentCode, p.u_fname, p.u_lname,
+           GROUP_CONCAT(DISTINCT a.academic_year ORDER BY a.academic_year SEPARATOR ',') AS years
+    ${YEAR_ROWS}
+    GROUP BY a.user_id, p.login_id, p.u_fname, p.u_lname
+    HAVING COUNT(DISTINCT a.academic_year) > 1
+    ORDER BY MIN(a.academic_year), p.login_id
+  `, ['REACHED_CAREER_POINT']);
+
+  return {
+    liveTotal: Number(t.live),
+    livePlusRcpTotal: Number(t.liveRcp),
+    rcpTotal: Number(t.rcp),
+    closedTotal: Number(t.closed),
+    rejectedTotal: Number(t.rejected),
+    unassignedTotal: Number(u.n),
+    rcpByYear,
+    rcpInTwoYears: multi.map(r => ({
+      studentId: r.studentId,
+      code: r.studentCode,
+      name: studentName(r),
+      years: String(r.years).split(',')
+    }))
+  };
+}
+
+/**
+ * "Unassigned accounts": the system buckets (rcp, clo, E300, as) and the test accounts
+ * (a student-shaped code with a dummy number, such as e9999). Team members and other staff
+ * are not listed. One row per account.
+ *
+ * `type` is 'System bucket' or 'Test / dummy'. Contact details ride along only for a role
+ * holding view:finance.
+ */
+async function getUnassignedAccounts(pool, { withContact = false } = {}) {
+  const [rows] = await pool.query(`
+    SELECT p.u_id AS accountId, TRIM(p.login_id) AS code, p.u_fname, p.u_lname,
+           p.u_status AS profileStatus, p.u_emailid AS email, p.u_phoneno AS phone,
+           CASE WHEN p.login_id IN (${pseudoList()}) THEN 'System bucket' ELSE 'Test / dummy' END AS type,
+           (SELECT COUNT(DISTINCT m.s_id) FROM educon_user_etm_mapping m
+             WHERE m.etm_id = p.u_id) AS studentsHandled,
+           (SELECT GROUP_CONCAT(DISTINCT a.academic_year ORDER BY a.academic_year SEPARATOR ', ')
+              FROM educon_user_academic_details a WHERE a.user_id = p.u_id) AS years
+    FROM educon_user_profile p
+    WHERE ${UNASSIGNED_ACCOUNT}
+    ORDER BY type, p.login_id
+  `, [...PSEUDO_USERS, ...PSEUDO_USERS]);
+
+  return rows.map(r => {
+    const row = {
+      account: true,
+      studentId: r.accountId,
+      code: r.code || String(r.accountId),
+      name: displayName({ u_fname: r.u_fname, u_lname: r.u_lname, login_id: r.code }),
+      type: r.type,
+      status: r.profileStatus || null,
+      studentsHandled: Number(r.studentsHandled),
+      years: r.years || ''
+    };
+    if (withContact) { row.email = r.email || ''; row.phone = r.phone || ''; row.hasContact = true; }
+    return row;
+  });
+}
+
+/**
+ * The students behind an all-time number: one row per distinct student.
+ *
+ * Each student is shown at ONE academic year — the latest year whose case status equals
+ * their profile status, else their latest year — so the row count equals the tile's
+ * number exactly. `academicYear` on every row says which year that is.
+ *
+ * With `year`, the list is that year's: the students whose profile-status case sits in that
+ * year, by the matrix's own attribution — the rule the per-year figures use.
+ */
+async function getAllTimeStudentList(pool, { population, withMoney = false, year = null }) {
+  const filter = ALL_TIME_POPULATIONS[population];
+  if (!filter) throw new Error('Unknown population');
+
+  const moneyColumns = withMoney ? `,
+      COALESCE((SELECT MAX(f.amount_sanctioned)
+                  FROM educon_student_final_approval_and_sanction f
+                 WHERE f.s_id = pick.caseId
+                   AND f.academic_year = pick.academicYear), 0) AS sanctioned,
+      COALESCE((SELECT SUM(d.pt_amount_disbursed) FROM (${DISTINCT_PAYMENTS}) d
+                 WHERE d.s_id = pick.user_id
+                   AND d.pt_academic_year = pick.academicYear), 0) AS disbursed,
+      COALESCE((SELECT COUNT(DISTINCT d2.pt_academic_year) FROM (${DISTINCT_PAYMENTS}) d2
+                 WHERE d2.s_id = pick.user_id), 0) AS supportYears,
+      COALESCE((SELECT SUM(d3.pt_amount_disbursed) FROM (${DISTINCT_PAYMENTS}) d3
+                 WHERE d3.s_id = pick.user_id), 0) AS cumulativeDisbursed` : '';
+
+  const PSEUDO_PICK = `
+      (SELECT m3.etm_id
+         FROM educon_user_etm_mapping m3
+         INNER JOIN educon_user_profile p3 ON p3.u_id = m3.etm_id
+        WHERE m3.s_id = a.user_id
+          AND p3.login_id IN ('rcp','clo','E300','as','rcp1819')
+        ORDER BY m3.etm_id ASC
+        LIMIT 1)`;
+
+  // Which year row stands for the student: the latest year whose case status equals their
+  // profile status, else their latest year; or, for one year, the matrix's attribution.
+  const yearClause = year ? `a.academic_year = ?
+        AND (a.application_status = p.u_status
+             OR (NOT EXISTS (SELECT 1 FROM educon_user_academic_details a2
+                              WHERE a2.user_id = a.user_id AND a2.application_status = p.u_status)
+                 AND a.academic_year = (SELECT MAX(a3.academic_year)
+                                          FROM educon_user_academic_details a3
+                                         WHERE a3.user_id = a.user_id)))`
+    : `a.academic_year = COALESCE(
+              (SELECT MAX(ax.academic_year) FROM educon_user_academic_details ax
+                WHERE ax.user_id = a.user_id AND ax.application_status = p.u_status),
+              (SELECT MAX(ay.academic_year) FROM educon_user_academic_details ay
+                WHERE ay.user_id = a.user_id))`;
+
+  const [rows] = await pool.query(`
+    SELECT
+      pick.user_id      AS studentId,
+      pick.caseId,
+      pick.academicYear,
+      pick.status,
+      sp.login_id       AS studentCode,
+      sp.u_fname, sp.u_lname,
+      sp.u_status       AS profileStatus,
+      pd.sp_fname, pd.sp_lname,
+      h.login_id        AS handlerLogin,
+      h.u_fname         AS h_fname,
+      h.u_lname         AS h_lname,
+      ph.login_id       AS pseudoHandlerLogin,
+      ph.u_fname        AS ph_fname,
+      ph.u_lname        AS ph_lname,
+      (SELECT GROUP_CONCAT(DISTINCT hr.name ORDER BY hr.id SEPARATOR ',')
+         FROM educon_user_profile_roles hpr JOIN role hr ON hr.id = hpr.roles_id
+        WHERE hpr.users_u_id = pick.ownerId AND hpr.roles_id IN (${ETM_ROLE_IDS.join(', ')})) AS handlerRoles,
+      fl.approval_id             AS approvalCode,
+      ap.u_fname AS ap_fname, ap.u_lname AS ap_lname,
+      san.sanctioning_authority_id AS sanctionCode,
+      sn.u_fname AS sn_fname, sn.u_lname AS sn_lname,
+      pap.login_id AS pap_login, pap.u_fname AS pap_fname, pap.u_lname AS pap_lname,
+      psn.login_id AS psn_login, psn.u_fname AS psn_fname, psn.u_lname AS psn_lname,
+      ${PROFILE_COLUMNS}${moneyColumns}
+    FROM (
+      SELECT
+        a.user_id,
+        a.s_id                AS caseId,
+        a.academic_year       AS academicYear,
+        a.application_status  AS status,
+        ${OWNER_PICK}         AS ownerId,
+        ${PSEUDO_PICK}        AS pseudoOwnerId
+      FROM educon_user_academic_details a
+      JOIN educon_user_profile p ON p.u_id = a.user_id
+      WHERE ${filter}
+        AND ${REAL_STUDENT}
+        AND ${yearClause}
+    ) pick
+    LEFT JOIN educon_user_profile sp ON sp.u_id = pick.user_id
+    LEFT JOIN educon_student_personal_details pd ON pd.s_id = pick.user_id
+    LEFT JOIN educon_user_profile h  ON h.u_id  = pick.ownerId
+    LEFT JOIN educon_user_profile ph ON ph.u_id = pick.pseudoOwnerId
+    ${AUTHORITY_JOINS}
+    ${PROFILE_JOINS.replace('%CASE%', 'pick.caseId').replace('%STUDENT%', 'pick.user_id')}
+  `, year ? [...PSEUDO_USERS, year] : [...PSEUDO_USERS]);
+
+  return rows
+    .map(r => {
+      const row = {
+        studentId: r.studentId,
+        caseId: r.caseId,
+        academicYear: r.academicYear,
+        code: r.studentCode || String(r.studentId),
+        role: STUDENT_ROLE_NAME,
+        name: studentName(r),
+        // The population is defined on the profile status, so that is the status shown.
+        status: r.profileStatus || r.status,
+        profileStatus: r.profileStatus || null,
+        handler: r.handlerLogin
+          ? { loginId: r.handlerLogin, name: displayName({ u_fname: r.h_fname, u_lname: r.h_lname, login_id: r.handlerLogin }),
+            roles: r.handlerRoles ? String(r.handlerRoles).split(',') : [] }
+          : r.pseudoHandlerLogin
+            ? { loginId: r.pseudoHandlerLogin, name: displayName({ u_fname: r.ph_fname, u_lname: r.ph_lname, login_id: r.pseudoHandlerLogin }), pseudo: true }
+            : null,
+        approvalAuth: authority(r.approvalCode, r.ap_fname, r.ap_lname,
+          { login_id: r.pap_login, fname: r.pap_fname, lname: r.pap_lname }),
+        sanctionAuth: authority(r.sanctionCode, r.sn_fname, r.sn_lname,
+          { login_id: r.psn_login, fname: r.psn_fname, lname: r.psn_lname }),
+        profile: studentProfile(r)
+      };
+      if (withMoney) {
+        const sanctioned = Number(r.sanctioned);
+        const disbursed = Number(r.disbursed);
+        row.money = {
+          sanctioned, disbursed, pending: sanctioned - disbursed,
+          supportYears: Number(r.supportYears),
+          cumulativeDisbursed: Number(r.cumulativeDisbursed)
+        };
       }
       return row;
     })
@@ -801,6 +1305,38 @@ async function getStudentDetail(pool, studentId) {
   };
 }
 
+/** All payment vouchers for one student, de-duplicated, newest first. */
+async function getStudentVouchers(pool, studentId) {
+  const [rows] = await pool.query(`
+    SELECT DISTINCT
+      s_id, pt_academic_year AS academicYear, pt_payment_voucher_no AS voucherNo,
+      pt_voucher_date AS voucherDate, pt_amount_disbursed AS amount,
+      pt_payment_toward AS paymentToward, pt_payment_mode AS paymentMode,
+      pt_bank_txn_id AS bankTxnId
+    FROM educon_payment_transaction_details
+    WHERE s_id = ?
+      AND COALESCE(pt_cancel_tag, 'N') <> 'Y'
+    ORDER BY pt_voucher_date DESC, pt_payment_voucher_no DESC
+  `, [studentId]);
+
+  let total = 0;
+  const vouchers = rows.map(r => {
+    const amt = Number(r.amount);
+    total += amt;
+    return {
+      academicYear: r.academicYear,
+      voucherNo: r.voucherNo,
+      voucherDate: r.voucherDate,
+      amount: amt,
+      paymentToward: r.paymentToward,
+      paymentMode: r.paymentMode,
+      bankTxnId: r.bankTxnId
+    };
+  });
+
+  return { studentId: Number(studentId), supportYears: new Set(rows.map(r => r.academicYear)).size, total, vouchers };
+}
+
 /** Per-year totals across every academic year, for the trend chart. */
 async function getYearTrend(pool) {
   const [rows] = await pool.query(`
@@ -825,12 +1361,20 @@ module.exports = {
   getStatusCatalog,
   getStatusTotals,
   getAssignedStatusTotals,
+  getProfileStatusCounts,
   getMatrix,
   getReconciliation,
   getYearReport,
   getYearTrend,
   getStudentList,
+  getLatestStudent,
+  getAllTimeTotals,
+  getAllTimeStudentList,
+  getUnassignedAccounts,
   getStudentDetail,
+  getStudentVouchers,
+  ALL_TIME_POPULATIONS,
+  DUMMY_STUDENT_NUMBERS,
   STATUS_ORDER,
   TERMINAL_STATUSES,
   PSEUDO_USERS,

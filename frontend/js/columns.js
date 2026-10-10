@@ -9,7 +9,9 @@
  * one column two colours — they did until 2026-09-09, when this field replaced the two
  * separate maps that had drifted apart on DISBURSEMENT_PENDING.
  *
- * Not reported at all: REJECTED, CASE_CLOSED, BUDGET_PENDING.
+ * Not reported at all: BUDGET_PENDING.
+ * REACHED_CAREER_POINT, CASE_CLOSED, REJECTED are shown as summary rows below
+ * the Grand Total, not as columns.
  * CHANGE_REQUIRED has no column of its own — a form sent back for changes is not yet
  * submitted, so it counts inside Form Not Submitted.
  */
@@ -20,8 +22,7 @@ window.PIPELINE_COLUMNS = [
   { key: 'SANCTION_PENDING',         label: 'Sanction Pending',         cssVar: '--seq-5',      statuses: ['FIRST_LEVEL_APPROVED'] },
   { key: 'DISBURSEMENT_PENDING',     label: 'Disbursement Pending',     cssVar: '--seq-6',      statuses: ['FINAL_LEVEL_APPROVED'] },
   { key: 'STUDENT_DISBURSED',        label: 'Student Disbursed',        cssVar: '--good',       statuses: ['STUDENT_DISBURSED'] },
-  { key: 'NO_REQUIREMENT_THIS_YEAR', label: 'No Requirement This Year', cssVar: '--text-muted', statuses: ['NO_REQUIREMENT_THIS_YEAR'] },
-  { key: 'REACHED_CAREER_POINT',   label: 'RCP',                       cssVar: '--seq-7',      statuses: ['REACHED_CAREER_POINT'] }
+  { key: 'NO_REQUIREMENT_THIS_YEAR', label: 'No Requirement This Year', cssVar: '--text-muted', statuses: ['NO_REQUIREMENT_THIS_YEAR'] }
 ];
 
 /** Sum of one column's underlying exact statuses from a { STATUS: count } map. */

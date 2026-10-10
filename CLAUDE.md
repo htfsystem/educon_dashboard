@@ -478,7 +478,8 @@ keeps the brand locked to the top and the footer to the bottom on every page.
 
 ### Pages
 
-1. **Dashboard** — animated hero and the status distribution chart.
+1. **Dashboard** — animated hero, the status distribution chart, and (added 2026-10-08, on
+   request) the **all-years tiles** under them — see "The all-years tiles" below.
 2. **Student Status Summary** — the member × status matrix, with Excel/CSV export.
 3. **Users** (admin only) — manage dashboard accounts and view recent sign-ins.
 
@@ -495,6 +496,124 @@ the topbar status line (the `Live · educon_prod` badge, the "Updated Ns ago" fr
 counter, and the read-only notice), and the summary page's **"Status matrix" heading**
 (removed 2026-09-01 — the topbar page title already names the page). `/api/trend` still
 exists and is still guarded, but nothing consumes it.
+
+The all-years tiles (2026-10-08) are **not** the removed headline tiles: those restated
+the selected year's pipeline, these are the only figures in the dashboard that ignore the
+year selector.
+
+### The all-years tiles (page 1, `#allTimeKpis`)
+
+Asked for directly: the latest student ID, total live students across all years, live +
+RCP, and RCP (total and per year) — every number clickable, opening exactly the students
+behind it. Filled by `loadAllTime()` / `renderAllTime()` in `app.js` from
+`GET /api/overview/all-time`; refreshed with the hero, not with the year selector.
+
+| Tile | Is | Click opens |
+|---|---|---|
+| Latest Student ID | highest `login_id` number among real students, ignoring `DUMMY_STUDENT_NUMBERS` (`9999`, `999` — "Test Kumar", a throwaway) | that student's two-card dialog |
+| Total Live Students | distinct students whose **profile** `u_status` is not `REACHED_CAREER_POINT` / `CASE_CLOSED` / `REJECTED` | all-years list, `population=live` |
+| Live + RCP | distinct students whose `u_status` is not `CASE_CLOSED` / `REJECTED` | `population=live_rcp` |
+| RCP total | distinct students with `u_status = REACHED_CAREER_POINT` | `population=rcp` |
+| RCP per year | the matrix's own RCP row, per year (`getProfileStatusCounts` attribution) | the **existing** per-year RCP list (`statusSource=profile`) |
+
+**Revised 2026-10-09, at the user's request.** The tiles are now **one row of six, in this
+order**: Total Registered Students (shows the latest `login_id`; click opens that student),
+Reached Career Point, Closed, Rejected, Live, Live + RCP — then the RCP year-wise
+distribution in its own card below. **Closed and Rejected** are all-years distinct totals
+(`population=closed|rejected`). They briefly had an academic-year filter (`#kpiYear`); it was
+**removed the same day at the user's request** along with its `closedByYear` /
+`rejectedByYear` queries — do not bring it back unasked.
+Also on 2026-10-09 the **RCP / Closed / Rejected rows and the Grand Total row were removed
+from the Student Status Summary table** (screen and Excel export) to free the page for these
+tiles; only "Live Total Student" remains in its footer. `profileStatusCounts` is still sent
+by `/api/report` but nothing in the table reads it now.
+
+**Added 2026-10-09: the Unassigned Accounts card** (7th, last). It counts and lists every
+account that is not a real student **and** is either a system bucket or a test account
+(`UNASSIGNED_ACCOUNT`): on 2026-10-09 that is 6 — `rcp`, `clo`, `E300`, `as` (type "System
+bucket") and `e9999` "Test Kumar", `e999` (type "Test / dummy"). Team members (31) and other
+staff (12) are also not students, but were **deliberately left out of this list at the user's
+request** — they are outside every student figure and outside this card. `getUnassignedAccounts` → `/api/students/all-time?population=unassigned`; its rows
+carry `account: true`, so `students.js` draws `ACCOUNT_COLUMNS` (Account ID, Name, Account
+type, Profile status, Students handled, Academic years) instead of the student columns, the
+rows do not open a student card, and the footer says "accounts". **Email and phone appear
+only for a role with `view:finance`** — decided server-side. To mark another test account,
+add its number to `DUMMY_STUDENT_NUMBERS`; it then leaves every student figure and appears
+here.
+Because the dummies are now outside `REAL_STUDENT`, Live fell 161 → 160 (`e9999`) and Rejected
+52 → 51 (`e999`). **Year clicks now use the all-time list with `year=`** (`getAllTimeStudentList
+({ year })`, the matrix's attribution restricted to real students) rather than the old
+per-year endpoint, so a year's figure equals its list even where a dummy would differ. This
+applies to the RCP year bars.
+
+**Multi-select column filters (2026-10-09).** `filters.js` has a fourth control type,
+`multi`: a button that opens a tick-box list and keeps any row whose cell equals ANY ticked
+value (a filter value is an array, so use `isSet()`, never `!== ''`). The drill-down list
+uses it on **Education, Field of education, Specialization, Board / University, Support Year
+and Cumulative Disbursed**; the other columns keep their single select / text / min.
+The panel is `position: fixed` inside the table — an absolutely positioned one is clipped by
+the sticky header, and one appended to `<body>` is drawn under the `<dialog>`. It closes on
+outside click, Escape (which does not close the dialog) or any scroll. Ticked values survive
+a sort re-render and appear in the export's filter line. Cumulative Disbursed offers the
+exact amounts present (a ₹ list, not a range) as asked — a "from–to" would be a separate control.
+
+### Roles — who is a student, who is a team member (2026-10-09)
+
+The app gives everyone a role at registration. `role` (id, name): **1 `educon_student`**
+(423 users), **2 `sct`** (25), **3 `cm`** (24), 4 `ccm`, 5 `manager`, 7 `donor` (all unused),
+**6 `admin`** (6). Who holds which: `educon_user_profile_roles (users_u_id, roles_id)` — a
+person can hold several (ks, mk, mp, dd, nig do). `educon_user_profile_roles_id` is empty;
+`educon_user_etm_mapping.etm_role` is the handler's role id (2, 3 or 6).
+
+- **A student is decided by role**, not by the shape of the code: `studentOnly(col)` in
+  `pipelineService.js` = holds role 1 **and** is not a dummy number (`DUMMY_STUDENT_NUMBERS`).
+  It is applied in every student query — years, status totals, profile counts, the matrix,
+  assigned totals, authorities, reconciliation, the drill-down list and all the all-years tiles.
+  (`d1` has role `sct`, so it is no longer miscounted as a student; `e9999` / `e999` hold the
+  student role but are dummies.) Stray staff academic rows therefore cannot enter a count.
+- **Matrix members are everyone holding `sct` or `cm`** (minus the system buckets): 45 rows.
+  **The page still shows ETM and ATM** (two bands, Team filter ETM + ATM / ETM only / ATM
+  only) — the split is the business roster `ATM_CODES`, because the DB has no ATM role. The
+  roles (`sct`, `cm`, `admin`) are carried **in the data only** (`members[].roles`, and
+  `role` / `handler.roles` on student rows): **do not print them on the page** — shown briefly
+  on 2026-10-09, removed the same day at the user's request.
+- **Dormant members (2026-10-10).** `DORMANT_MEMBERS` (`ac ap d1 dm kdd mg dd2 rg sds sms vs ng`
+  ETM, `atk` ATM) hold no students and are left off the matrix; a year in which one of them
+  holds a student shows them again automatically. `rcp1819` ("Reached Careerpoint1819") is a
+  system bucket and was added to `PSEUDO_USERS` (so it also lists under Unassigned Accounts,
+  which is 5 now: as, clo, E300, rcp, rcp1819 — `e999` / `e9999` were deleted from the DB).
+  Other zero-student members (jrs, ks, dmp, nd, ng; ATM aas) were deliberately kept.
+- Reconciliation still holds for all 7 years (member rows == assigned).
+- `getYearTrend` (unused by the UI) was not changed.
+
+Things that are easy to get wrong, all verified against live `educon_prod` on 2026-10-08:
+
+- **Population is the profile status, which is one value per student**, so a student with
+  five year-rows cannot be counted five times. This is a different definition from the
+  matrix's "Live Total Student" (assigned to a real handler, in the 7 reported columns, for
+  one year — which also drops `BUDGET_PENDING`). The two will not agree and are not meant to.
+- **`REAL_STUDENT` is mandatory in every all-years query.** `educon_user_profile` holds staff
+  too, and 46 staff accounts (`dd`, `ks`, `rcp`, `clo`, `as`, …) carry one stray `CREATED`
+  academic row each. Unfiltered, "live" read **217**; it is **170**. A real student's code is
+  one letter and digits (`e617`; one is stored padded as `' e682 '`, hence `TRIM`) and a
+  student is never an `etm_id` in `educon_user_etm_mapping` (that also drops `E300`, the one
+  pseudo-user shaped like a student). Live + RCP is 325, not 372; RCP is 155 either way.
+- **The RCP year rows add up to 160, the total is 155.** Five students have an RCP case in
+  two academic years and so sit in both year rows (the matrix does the same, which is why a
+  year opens the very list it counts). `rcpTotal` is therefore a **distinct** count, never
+  the sum of the rows; the tile says so in words and **lists the five students** beneath it
+  (`rcpInTwoYears`: code, name, the two years; each row opens that student — `e360`, `e414`,
+  `e558`, `e562`, `e618` on 2026-10-08). Do not "fix" the 160.
+- **The all-years list is one row per student**, shown at the latest year whose case status
+  equals their profile status, else their latest year (`academicYear` on every row). Its
+  row count equals the tile exactly — checked for all three populations, with and without
+  money. It adds an **Academic year** column and hides the dialog's year select.
+- **`/api/students/all-time` must stay above `/api/students/:studentId`** in `server.js`,
+  or "all-time" is swallowed as a student id. `__tests__/alltime.test.js` guards it.
+- **"Latest" is the maximum number, not the newest record.** The highest real code today is
+  `e987` (Paresh Mutha, `REJECTED`, `u_id` 22582), yet `e791` has a higher `u_id` (25305) —
+  so `e987` looks hand-entered rather than issued in sequence. If it should not count, add
+  `987` to `DUMMY_STUDENT_NUMBERS`; nothing else changes.
 
 ### The profile menu — four rows, no descriptions
 
@@ -1030,6 +1149,8 @@ from its database connection.
 | `GET /api/report?year=YYYY-YYYY` | `view:summary` | Full payload: statuses, member matrix, totals, reconciliation |
 | `GET /api/students?year=…&statuses=A,B&etmId=…` | `view:summary` | The students behind one matrix cell. Omit `etmId` for the Grand Total row. Each row also carries `money` (sanctioned / disbursed / pending for that year) **only** for a role holding `view:finance`; `includesAmounts` says which it is |
 | `GET /api/students/:studentId` | `view:finance` | One student's academic profile **and** sanctioned / disbursed / pending, per academic year |
+| `GET /api/overview/all-time` | `view:dashboard` | Not year-scoped: `latestStudent`, `liveTotal`, `livePlusRcpTotal`, `rcpTotal` (distinct) and `rcpByYear` |
+| `GET /api/students/all-time?population=live\|live_rcp\|rcp` | `view:summary` | One row per distinct student, with `academicYear`; `money` only for `view:finance`. Anything but the three populations is refused |
 | `GET /api/trend` | `view:dashboard` | Per-status totals for every year (trend chart) |
 | `GET /api/users`, `POST`, `PATCH /:id`, `DELETE /:id` | `manage:users` | Local account management |
 | `GET /api/login-history` | `manage:users` | Last 50 sign-in attempts |
@@ -1182,6 +1303,32 @@ The `data/` directory is no longer created or used.
 ---
 
 ## Last verified
+
+2026-10-08 — **the all-years tiles landed on page 1** (see "The all-years tiles"). New
+service functions `getLatestStudent`, `getAllTimeTotals`, `getAllTimeStudentList`; two new
+routes; `students.js` gained an all-years fetch, an Academic year column and exports
+`openStudent` / `openList`. No existing query, count or column changed.
+
+Checked against live `educon_prod`: tile == list length for `live` (170), `live_rcp` (325)
+and `rcp` (155), with and without money, no duplicate students, no staff code in any list,
+`live` and `rcp` disjoint and summing to `live_rcp`; each of the 7 RCP year rows equals both
+the matrix footer figure and the length of the existing per-year list it opens (36 / 20 / 27
+/ 19 / 38 / 1 / 19). The probe caught two mistakes in the first design, both fixed before
+shipping: the year rows do not sum to the distinct total (160 vs 155), and 46 staff accounts
+were inflating "live" (217 → 170).
+
+Driven in headless Chrome against the running page: all four tiles and all seven year rows
+open a dialog whose row count equals the number clicked; a row inside an all-years list opens
+that student; the Latest tile opens `e987`; the year select is genuinely hidden (computed
+`display`, not just the attribute — the first run only checked the attribute and missed that
+`.field` overrides `[hidden]`); light, dark and 480px render, no horizontal scroll, no page
+errors. `__tests__/alltime.test.js` (new, 7 tests) pins the rules above.
+
+Not mine, left alone: `__tests__/invariants.test.js` has a syntax error (literal newlines
+inside the `fn()` helper's string) so it cannot run, and once repaired its disbursement test
+fails on `SUM(d3.pt_amount_disbursed)` — the cumulative-disbursed subquery already in
+`getStudentList`, which sums over `DISTINCT_PAYMENTS` correctly but under an alias the
+assertion does not expect.
 
 2026-09-09 — **dashboard accounts moved from SQLite to MySQL, so a user created once
 persists forever.** The reported symptom was that the administrator could always sign in

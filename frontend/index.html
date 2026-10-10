@@ -353,6 +353,85 @@
 
   </section>
 
+  <!-- ---- All years: not driven by the year selector (except the Closed / Rejected filter
+       below). Every number is a button that opens the exact students behind it
+       (js/students.js). Filled by renderAllTime in app.js. ---- -->
+  <div class="kpi-head">
+    <h2 class="kpi-heading">Students — all academic years</h2>
+  </div>
+
+  <section class="kpi-grid" id="allTimeKpis" aria-label="Students across all academic years">
+
+    <article class="bcard kpi-card" data-spotlight style="--i:2">
+      <button type="button" class="kpi-hit" data-kpi="latest" disabled>
+        <span class="eyebrow">Total Registered Students</span>
+        <span class="kpi-value kpi-code" id="kpiLatestCode">—</span>
+        <span class="kpi-sub" id="kpiLatestName">Latest Student ID</span>
+      </button>
+    </article>
+
+    <article class="bcard kpi-card" data-spotlight style="--i:3">
+      <button type="button" class="kpi-hit" data-kpi="rcp" disabled>
+        <span class="eyebrow">Reached Career Point</span>
+        <span class="kpi-value" id="kpiRcp" data-count="0">—</span>
+        <span class="kpi-sub">students, all years</span>
+      </button>
+    </article>
+
+    <article class="bcard kpi-card" data-spotlight style="--i:4">
+      <button type="button" class="kpi-hit" data-kpi="closed" disabled>
+        <span class="eyebrow">Closed</span>
+        <span class="kpi-value" id="kpiClosed" data-count="0">—</span>
+        <span class="kpi-sub" id="kpiClosedSub">all years</span>
+      </button>
+    </article>
+
+    <article class="bcard kpi-card" data-spotlight style="--i:5">
+      <button type="button" class="kpi-hit" data-kpi="rejected" disabled>
+        <span class="eyebrow">Rejected</span>
+        <span class="kpi-value" id="kpiRejected" data-count="0">—</span>
+        <span class="kpi-sub" id="kpiRejectedSub">all years</span>
+      </button>
+    </article>
+
+    <article class="bcard kpi-card" data-spotlight style="--i:6">
+      <button type="button" class="kpi-hit" data-kpi="live" disabled>
+        <span class="eyebrow">Live Students</span>
+        <span class="kpi-value" id="kpiLive" data-count="0">—</span>
+        <span class="kpi-sub">all years, each counted once</span>
+      </button>
+    </article>
+
+    <article class="bcard kpi-card" data-spotlight style="--i:7">
+      <button type="button" class="kpi-hit" data-kpi="liveRcp" disabled>
+        <span class="eyebrow">Live + RCP Students</span>
+        <span class="kpi-value" id="kpiLiveRcp" data-count="0">—</span>
+        <span class="kpi-sub">live plus Reached Career Point</span>
+      </button>
+    </article>
+
+    <article class="bcard kpi-card" data-spotlight style="--i:8">
+      <button type="button" class="kpi-hit" data-kpi="unassigned" disabled>
+        <span class="eyebrow">Unassigned Accounts</span>
+        <span class="kpi-value" id="kpiUnassigned" data-count="0">—</span>
+        <span class="kpi-sub">system &amp; test accounts</span>
+      </button>
+    </article>
+
+    <!-- Error surface only; empty by default so it takes no space. -->
+    <p class="hero-sub kpi-error" id="kpiError"></p>
+  </section>
+
+  <!-- ---- RCP, year by year ---- -->
+  <section class="bcard kpi-years-card" data-spotlight style="--i:8" aria-label="Reached Career Point by year">
+    <div class="kpi-years-wrap">
+      <p class="kpi-years-title">Reached Career Point — year-wise distribution</p>
+      <div class="kpi-years" id="kpiRcpYears"></div>
+      <p class="kpi-note" id="kpiRcpNote"></p>
+      <div class="kpi-multi" id="kpiRcpMulti"></div>
+    </div>
+  </section>
+
 </main>
 
 <!-- --------------------------------------- PAGE 2 · STUDENT STATUS SUMMARY --- -->
@@ -522,6 +601,22 @@
     </div>
   </div>
   <div id="studentBody"></div>
+</dialog>
+
+<dialog id="voucherDialog" class="dialog dialog-wide">
+  <div class="dialog-head">
+    <div>
+      <h3 id="voucherTitle">Payment Vouchers</h3>
+      <p class="panel-sub" id="voucherMeta"></p>
+    </div>
+    <div class="dialog-head-actions">
+      <button class="dialog-close" id="voucherClose" type="button" aria-label="Close">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#icoClose"/></svg>
+      </button>
+    </div>
+  </div>
+  <div id="voucherBody"></div>
+  <p class="dialog-foot" id="voucherFoot"></p>
 </dialog>
 
 <div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>

@@ -61,20 +61,39 @@
   // The Total column is every reported column at once — the same array page 1's hero
   // sums, so a Total cell and its list can never disagree.
   const TOTAL_KEY = '__TOTAL__';
-  const statusesFor = key => key === TOTAL_KEY
-    ? COLUMNS.flatMap(c => c.statuses)
-    : (COLUMNS.find(c => c.key === key) || { statuses: [] }).statuses;
+  const GRAND_TOTAL_KEY = '__GRAND_TOTAL__';
+  const SUMMARY_STATUSES = {
+    REACHED_CAREER_POINT: 'Reached Career Point',
+    CASE_CLOSED:          'Closed',
+    REJECTED:             'Rejected'
+  };
 
-  const labelFor = key => key === TOTAL_KEY
-    ? 'All tracked columns'
-    : (COLUMNS.find(c => c.key === key) || { label: key }).label;
+  const statusesFor = key => {
+    if (key === GRAND_TOTAL_KEY)
+      return [...COLUMNS.flatMap(c => c.statuses), ...Object.keys(SUMMARY_STATUSES)];
+    if (key === TOTAL_KEY)
+      return COLUMNS.flatMap(c => c.statuses);
+    if (SUMMARY_STATUSES[key])
+      return [key];
+    return (COLUMNS.find(c => c.key === key) || { statuses: [] }).statuses;
+  };
+
+  const labelFor = key => key === GRAND_TOTAL_KEY
+    ? 'All students'
+    : key === TOTAL_KEY
+      ? 'All tracked columns'
+      : SUMMARY_STATUSES[key]
+        ? SUMMARY_STATUSES[key]
+        : (COLUMNS.find(c => c.key === key) || { label: key }).label;
 
   const { $, esc, money, getJSON, plural, options } = window.EduConUtil;
 
   const can = perm => !!window.EduConUser && window.EduConUser.permissions.includes(perm);
 
   /** "1 student" / "156 students" — written five different ways before 2026-09-09. */
-  const nStudents = n => `${n} ${plural(n, 'student')}`;
+  // The unassigned-accounts list counts accounts, not students; reset when its dialog closes.
+  let unit = 'student';
+  const nStudents = n => `${n} ${plural(n, unit)}`;
 
   /* A field the database has no answer for. Written as an em dash rather than as the
      word "Unknown": the student did not answer, which is not the same as the dashboard
@@ -97,11 +116,23 @@
   // and moving along a row does not re-query. Cleared whenever the matrix reloads.
   const cache = new Map();
 
-  function fetchList({ year, etmId, colKey }) {
-    const key = `${year}|${etmId ?? ''}|${colKey}`;
+  function fetchList({ year, etmId, colKey, scope, statusSource, population }) {
+    // An all-years tile (Live / Live + RCP / RCP): one row per distinct student, no year.
+    if (population) {
+      const allKey = `all-time|${population}|${year || ''}`;
+      if (!cache.has(allKey)) {
+        const yearParam = year ? `&year=${encodeURIComponent(year)}` : '';
+        cache.set(allKey, getJSON(`/api/students/all-time?population=${encodeURIComponent(population)}${yearParam}`)
+          .catch(error => { cache.delete(allKey); throw error; }));
+      }
+      return cache.get(allKey);
+    }
+    const key = `${year}|${etmId ?? ''}|${colKey}|${scope || ''}|${statusSource || ''}`;
     if (!cache.has(key)) {
       const params = new URLSearchParams({ year, statuses: statusesFor(colKey).join(',') });
       if (etmId) params.set('etmId', etmId);
+      if (scope) params.set('scope', scope);
+      if (statusSource) params.set('statusSource', statusSource);
       cache.set(key, getJSON(`/api/students?${params}`).catch(error => {
         cache.delete(key);            // a failure must not be remembered as the answer
         throw error;
@@ -137,7 +168,7 @@
    * writes it as a number Excel can add up rather than as text, and `columnsFor` drops it
    * for a role without `view:finance` (whose payload carries no `money` object anyway).
    */
-  const MONEY_KEYS = ['sanctioned', 'disbursed', 'pending'];
+  const MONEY_KEYS = ['sanctioned', 'disbursed', 'pending', 'cumulativeDisbursed'];
 
   /**
    * One authority column — the login code that signed this student's case off at that
@@ -231,6 +262,10 @@
       text: s => s.name },
     { key: 'status',  label: 'Current status', cls: 'dt-status',  filter: 'select',
       text: s => s.status, html: s => statusTag(s.status) },
+    // Only on the all-years lists, where a row stands for a student rather than for a
+    // student-year and the reader needs to know which year its figures belong to.
+    { key: 'academicYear', label: 'Academic year', cls: 'dt-year', filter: 'select',
+      text: s => s.academicYear },
     { key: 'handler', label: 'ETM / ATM',      cls: 'dt-handler', filter: 'select',
       text: s => (s.handler ? s.handler.name : ''),
       html: s => (s.handler
@@ -249,22 +284,45 @@
     moneyCol('sanctioned', 'Sanctioned'),
     moneyCol('disbursed',  'Disbursed'),
     moneyCol('pending',    'Pending disbursement'),
+    { key: 'supportYears', label: 'Support Year', cls: 'dt-support', filter: 'multi',
+      money: true,
+      text: s => (s && s.money ? String(s.money.supportYears || 0) : null),
+      attrs: s => (s && s.money ? ` data-money="supportYears" data-amount="${s.money.supportYears || 0}"` : ''),
+      html: s => {
+        if (!s || !s.money) return BLANK;
+        const n = s.money.supportYears;
+        return n ? String(n) : BLANK;
+      }
+    },
+    { key: 'cumulativeDisbursed', label: 'Cumulative Disbursed', cls: 'dt-money',
+      filter: 'multi', money: true,
+      text: s => (amount(s, 'cumulativeDisbursed') ? money(amount(s, 'cumulativeDisbursed')) : null),
+      attrs: s => (amount(s, 'cumulativeDisbursed') === null ? ''
+        : ` data-money="cumulativeDisbursed" data-amount="${amount(s, 'cumulativeDisbursed')}"`),
+      html: s => {
+        const n = amount(s, 'cumulativeDisbursed');
+        if (!n) return BLANK;
+        return `<a href="#" class="voucher-link" data-student-id="${s.studentId}" data-student-name="${
+          esc(s.name)}" data-student-code="${esc(s.code)}" title="Click to view payment vouchers">${
+          esc(money(n))}</a>`;
+      }
+    },
     // Education → field → specialization is the application's own hierarchy, and reads
     // as one thought across three columns: "Graduation · Medicine · MBBS : Allopathic".
     // They were raw codes until 2026-09-01 and so were deliberately kept off this list;
     // now that codeLabels.js has the real dropdowns they are the answer to "what kind of
     // student is this", which is the question the dialog exists to ask.
-    { key: 'education',   label: 'Education',    cls: 'dt-edu',     filter: 'select',
+    { key: 'education',   label: 'Education',    cls: 'dt-edu',     filter: 'multi',
       text: s => prof(s).education },
-    { key: 'field',       label: 'Field of education', cls: 'dt-field', filter: 'select',
+    { key: 'field',       label: 'Field of education', cls: 'dt-field', filter: 'multi',
       text: s => prof(s).fieldOfEducation },
-    { key: 'specialization', label: 'Specialization',  cls: 'dt-spec',  filter: 'select',
+    { key: 'specialization', label: 'Specialization',  cls: 'dt-spec',  filter: 'multi',
       text: s => prof(s).specialization },
     { key: 'studyYear',   label: 'Std / Year',   cls: 'dt-stdyear', filter: 'select',
       text: s => prof(s).studyYear },
     { key: 'college',     label: 'College',      cls: 'dt-college', filter: 'text',
       text: s => prof(s).college },
-    { key: 'board',       label: 'Board / University', cls: 'dt-uni', filter: 'select',
+    { key: 'board',       label: 'Board / University', cls: 'dt-uni', filter: 'multi',
       text: s => prof(s).board },
     { key: 'collegeCity', label: 'College city', cls: 'dt-city',    filter: 'text',
       text: s => prof(s).collegeCity },
@@ -279,6 +337,25 @@
     // the other personal fields it also rides in the hover preview below.
     { key: 'family',      label: 'Family status', cls: 'dt-family', filter: 'select',
       text: s => prof(s).familyStatus }
+  ];
+
+  /* The "Unassigned accounts" list: profiles that are not real students, so none of the
+     student columns (money, education, family...) apply. Contact details exist on a row only
+     for a role with view:finance — the server decides, and the columns follow the payload. */
+  const ACCOUNT_COLUMNS = [
+    { key: 'sr',     label: 'Sr. No',        cls: 'dt-sr',     filter: null, text: (s, i) => String(i + 1) },
+    { key: 'code',   label: 'Account ID',    cls: 'dt-id',     filter: 'text', placeholder: 'Search ID…',
+      sortable: true, text: s => s.code },
+    { key: 'name',   label: 'Name',          cls: 'dt-name',   filter: 'text', text: s => s.name },
+    { key: 'type',   label: 'Account type',  cls: 'dt-status', filter: 'select', text: s => s.type },
+    { key: 'status', label: 'Profile status', cls: 'dt-status', filter: 'select', text: s => s.status,
+      html: s => (s.status ? statusTag(s.status) : BLANK) },
+    { key: 'handled', label: 'Students handled', cls: 'dt-support', filter: 'text',
+      text: s => String(s.studentsHandled),
+      html: s => (s.studentsHandled ? String(s.studentsHandled) : BLANK) },
+    { key: 'years',  label: 'Academic years', cls: 'dt-years', filter: 'text', text: s => s.years },
+    { key: 'email',  label: 'Email', cls: 'dt-email', filter: 'text', contact: true, text: s => s.email },
+    { key: 'phone',  label: 'Phone', cls: 'dt-phone', filter: 'text', contact: true, text: s => s.phone }
   ];
 
   // The preview beside a number stays narrow enough to sit next to it: who the student
@@ -299,11 +376,15 @@
    * column of em dashes where the amounts should be is worse than no column.
    */
   function columnsFor(students, keys) {
+    if (students.some(s => s.account)) {
+      return ACCOUNT_COLUMNS.filter(c => !c.contact || students.some(s => s.hasContact));
+    }
     const handlers = new Set(students.map(s => (s.handler ? s.handler.loginId : '')));
     const hasMoney = can('view:finance') && students.some(s => s.money);
     return LIST_COLUMNS.filter(c => {
       if (keys && !keys.includes(c.key)) return false;
       if (c.money) return hasMoney;
+      if (c.key === 'academicYear') return students.some(s => s.academicYear);
       if (c.key === 'handler') return handlers.size > 1;
       return true;
     });
@@ -402,7 +483,8 @@
           esc(c.label)}${caret}</button></th>`;
     }).join('');
     const body = students.map((s, i) => `
-      <tr${clickable ? ` tabindex="0" role="button" data-student="${s.studentId}"` : ''}>
+      <tr${clickable ? ` tabindex="0" role="button" data-student="${s.studentId}"${
+        s.academicYear ? ` data-year="${esc(s.academicYear)}"` : ''}` : ''}>
         ${cols.map(c => {
           const raw = c.text(s, i);
           return `<td class="${c.cls}"${c.attrs ? c.attrs(s, i) : ''}>${
@@ -597,19 +679,23 @@
   let listTotal = 0;
 
   async function openList(ctx) {
-    // The dialog always opens on the latest academic year, regardless of which
-    // year's cell was clicked — asked for directly: a user reading an older year's
-    // matrix should still land on current data when they open the drill-down, not
-    // be left on the stale year until they notice and switch it themselves.
-    // window.EduConYears comes from /api/years, sorted newest first.
-    const latestYear = (window.EduConYears && window.EduConYears[0]) || ctx.year;
-    listCtx = { ...ctx, year: latestYear };
+    // The dialog opens on the academic year the cell was clicked from — which is the
+    // year already selected by the summary page's own filter (stamped onto every matrix
+    // cell as data-year). Reverted 2026-10-08: forcing the latest year regardless of the
+    // page's filter meant every click silently re-filtered to a different year than what
+    // the user had chosen, forcing them to re-pick it inside the dialog every time.
+    listCtx = { ...ctx };
+    unit = ctx.population === 'unassigned' ? 'account' : 'student';
     hidePop();
 
     listTitle.textContent = ctx.colLabel;
     listMeta.textContent = ctx.who;
-    listYear.innerHTML = options(window.EduConYears || [ctx.year]);
-    listYear.value = latestYear;
+    // An all-years list has no single year to re-pick, so the select is hidden for it.
+    listYear.closest('label').hidden = !!ctx.population;
+    if (!ctx.population) {
+      listYear.innerHTML = options(window.EduConYears || [ctx.year]);
+      listYear.value = ctx.year;
+    }
 
     if (!listDialog.open) listDialog.showModal();
     await paintList();
@@ -621,7 +707,7 @@
   function listFootText() {
     const filtered = listShown !== null && listShown !== listTotal;
     const count = filtered ? `${listShown} of ${nStudents(listTotal)}` : nStudents(listTotal);
-    return can('view:finance')
+    return can('view:finance') && unit === 'student'
       ? `${count} · select a student for their academic details and amounts`
       : count;
   }
@@ -654,7 +740,8 @@
    */
   function renderList() {
     const students = sortStudents(listStudents);
-    const clickable = can('view:finance');
+    // An account is not a student: there is no academic card or amounts to open.
+    const clickable = can('view:finance') && unit === 'student';
 
     listBody.innerHTML = listTable(students, {
       clickable, id: 'drillListTable', sortDir: listSortDir, totals: true
@@ -698,11 +785,11 @@
 
     if (!clickable) return;
     listBody.querySelectorAll('[data-student]').forEach(row => {
-      row.addEventListener('click', () => openStudent(Number(row.dataset.student)));
+      row.addEventListener('click', () => openStudent(Number(row.dataset.student), row.dataset.year));
       row.addEventListener('keydown', e => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         e.preventDefault();
-        openStudent(Number(row.dataset.student));
+        openStudent(Number(row.dataset.student), row.dataset.year);
       });
     });
   }
@@ -752,6 +839,7 @@
    */
   listDialog.addEventListener('close', () => {
     window.EduConFilters.forget(LIST_FILTERS);
+    unit = 'student';
     listShown = null;
     listTotal = 0;
     syncExportButton(false);
@@ -787,6 +875,7 @@
     if (!bodyRows.length) return;
 
     const filters = window.EduConFilters.active(LIST_FILTERS);
+    const yearText = listCtx.population ? 'All years' : listCtx.year;
     const last = X.colLetter(headers.length - 1);
     const rows = [];
     const merges = [];
@@ -796,7 +885,7 @@
 
     rows.push({
       cells: [{
-        v: `${listCtx.who}     ·     Academic year: ${listCtx.year}     ·     Generated: ${new Date().toLocaleString()}`,
+        v: `${listCtx.who}     ·     Academic year: ${yearText}     ·     Generated: ${new Date().toLocaleString()}`,
         s: S.info
       }],
       height: 18
@@ -902,7 +991,7 @@
     const stamp = filters.length ? '-filtered' : '';
     X.save(
       [{ name: listCtx.colLabel, rows, merges, cols: headers.map(h => ({ w: width(h) })), freezeRow: HEAD_ROW }],
-      `${X.safeName(`EduCon-${listCtx.colLabel}-${listCtx.who}-${listCtx.year}${stamp}`)}.xlsx`
+      `${X.safeName(`EduCon-${listCtx.colLabel}-${listCtx.who}-${yearText}${stamp}`)}.xlsx`
     );
   }
 
@@ -950,7 +1039,7 @@
 
   let stuDetail = null;
 
-  async function openStudent(studentId) {
+  async function openStudent(studentId, year) {
     stuName.textContent = 'Loading…';
     stuCode.textContent = '';
     stuYear.innerHTML = '';
@@ -967,8 +1056,10 @@
       stuYear.innerHTML = options(stuDetail.years.map(y => y.academicYear));
 
       // Open on the year the drill-down was taken from, when the student has one.
-      const preferred = listCtx && stuDetail.years.some(y => y.academicYear === listCtx.year)
-        ? listCtx.year
+      // An all-years list has no single year, so its rows name theirs (`year`).
+      const wanted = year || (listCtx && listCtx.year);
+      const preferred = wanted && stuDetail.years.some(y => y.academicYear === wanted)
+        ? wanted
         : stuDetail.years[0].academicYear;
       stuYear.value = preferred;
       paintStudent();
@@ -1061,6 +1152,8 @@
       etmId: cell.dataset.etm ? Number(cell.dataset.etm) : null,
       colKey: cell.dataset.col,
       colLabel: labelFor(cell.dataset.col),
+      scope: cell.dataset.scope || '',
+      statusSource: cell.dataset.statusSource || '',
       who: row.dataset.who || 'All team members'
     };
   }
@@ -1121,5 +1214,77 @@
   addEventListener('resize', hidePop, { passive: true });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') hidePop(); });
 
-  window.EduConDrill = { bind, invalidate };
+  // ---------- Voucher dialog ----------
+
+  const vDialog = $('voucherDialog');
+  const vTitle  = $('voucherTitle');
+  const vMeta   = $('voucherMeta');
+  const vBody   = $('voucherBody');
+  const vFoot   = $('voucherFoot');
+
+  async function openVouchers(studentId, studentName, studentCode) {
+    vTitle.textContent = `Payment Vouchers — ${studentName}`;
+    vMeta.textContent = studentCode;
+    vBody.innerHTML = '<p class="drill-empty">Loading…</p>';
+    vFoot.textContent = '';
+    if (!vDialog.open) vDialog.showModal();
+
+    try {
+      const data = await getJSON(`/api/students/${studentId}/vouchers`);
+      if (!data.vouchers.length) {
+        vBody.innerHTML = '<p class="drill-empty">No payment vouchers found.</p>';
+        return;
+      }
+
+      const rows = data.vouchers.map((v, i) => `<tr>
+        <td class="dt-sr">${i + 1}</td>
+        <td>${esc(v.academicYear || '')}</td>
+        <td>${v.voucherNo || BLANK}</td>
+        <td>${v.voucherDate ? new Date(v.voucherDate).toLocaleDateString('en-IN') : BLANK}</td>
+        <td class="dt-money">${v.amount ? esc(money(v.amount)) : BLANK}</td>
+        <td>${esc(v.paymentToward || '')}</td>
+        <td>${esc(v.paymentMode || '')}</td>
+      </tr>`).join('');
+
+      vBody.innerHTML = `<table class="drill-table">
+        <thead><tr>
+          <th class="dt-sr">Sr.</th>
+          <th>Academic Year</th>
+          <th>Voucher No</th>
+          <th>Voucher Date</th>
+          <th class="dt-money">Amount Disbursed</th>
+          <th>Payment Toward</th>
+          <th>Payment Mode</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr>
+          <td colspan="4" class="dt-total-label"><strong>Total (${data.supportYears} ${
+            plural(data.supportYears, 'year')})</strong></td>
+          <td class="dt-money"><strong>${esc(money(data.total))}</strong></td>
+          <td colspan="2"></td>
+        </tr></tfoot>
+      </table>`;
+
+      vFoot.textContent = `${data.vouchers.length} ${plural(data.vouchers.length, 'voucher')} across ${
+        data.supportYears} ${plural(data.supportYears, 'year')}`;
+    } catch (error) {
+      vBody.innerHTML = `<p class="drill-empty drill-error">${esc(error.message)}</p>`;
+    }
+  }
+
+  $('voucherClose').addEventListener('click', () => vDialog.close());
+
+  document.addEventListener('click', e => {
+    const link = e.target.closest('.voucher-link');
+    if (!link) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openVouchers(
+      Number(link.dataset.studentId),
+      link.dataset.studentName,
+      link.dataset.studentCode
+    );
+  });
+
+  window.EduConDrill = { bind, invalidate, openStudent, openList };
 })();

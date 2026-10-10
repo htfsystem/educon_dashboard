@@ -30,6 +30,9 @@ window.EduConFilters = (() => {
 
   const norm = s => String(s ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 
+  // A filter value is a string, or — for a 'multi' column — the array of ticked values.
+  const isSet = v => (Array.isArray(v) ? v.length > 0 : v !== undefined && v !== null && v !== '');
+
   /** A row's text for one column, taken from the cell the user is actually reading. */
   const cellText = (row, index) => {
     const cell = row.cells[index];
@@ -59,16 +62,19 @@ window.EduConFilters = (() => {
    *
    *   text    substring, case-insensitive — the forgiving default for names and places
    *   select  exact match on the whole cell, so "Jain" cannot also match "Non-Jain"
+   *   multi   exact match on the whole cell against ANY of the ticked values
    *   min     numeric floor; a cell with no number never passes a floor above zero
    */
   function passes(row, spec, values) {
     for (const col of spec.columns) {
       const v = values[col.index];
-      if (v === undefined || v === '') continue;
+      if (!isSet(v)) continue;
 
       const text = cellText(row, col.index);
 
-      if (col.type === 'select') {
+      if (col.type === 'multi') {
+        if (!v.some(x => norm(x) === text)) return false;
+      } else if (col.type === 'select') {
         if (text !== norm(v)) return false;
       } else if (col.type === 'min') {
         const n = Number(String(text).replace(/[^0-9.-]/g, ''));
@@ -131,9 +137,110 @@ window.EduConFilters = (() => {
     }
 
     entry.shown = shown;
-    table.classList.toggle('is-filtered', Object.values(values).some(v => v !== ''));
+    table.classList.toggle('is-filtered', Object.values(values).some(isSet));
     if (spec.onChange) spec.onChange(shown, rows.filter(r => !r.hasAttribute('data-filter-group')).length);
     return shown;
+  }
+
+  /* ---------- Multi-select: a button that opens a list of tick boxes ----------
+   *
+   * Asked for on 2026-10-09 for Education, Field of education, Specialization, Board /
+   * University, Support Year and Cumulative Disbursed — columns where the question is
+   * "show me these three courses", which a single-choice select cannot ask.
+   *
+   * The panel is `position: fixed`, placed from the button's rectangle: the header is
+   * sticky inside a scrolling region, which would clip an absolutely positioned list. It
+   * lives inside the table (so inside the <dialog>, which is in the top layer — a panel
+   * appended to <body> would be drawn underneath it). Only one is open at a time, and it
+   * closes on an outside click, Escape, or any scroll. */
+  let openMulti = null;
+  const closeMulti = () => {
+    if (!openMulti) return;
+    openMulti.panel.hidden = true;
+    openMulti.btn.setAttribute('aria-expanded', 'false');
+    openMulti = null;
+  };
+  document.addEventListener('click', e => { if (openMulti && !openMulti.wrap.contains(e.target)) closeMulti(); });
+  document.addEventListener('scroll', e => { if (openMulti && !openMulti.panel.contains(e.target)) closeMulti(); }, true);
+
+  function buildMulti(entry, col, i, dataRows) {
+    const { values } = entry;
+    const chosen = () => (Array.isArray(values[i]) ? values[i] : []);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'filter-multi';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'filter-input filter-multi-btn';
+    btn.setAttribute('aria-haspopup', 'true');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-label', `Filter by ${col.label || `column ${i + 1}`}`);
+
+    const panel = document.createElement('div');
+    panel.className = 'filter-multi-panel';
+    panel.hidden = true;
+    panel.setAttribute('role', 'group');
+
+    const paint = () => {
+      const n = chosen().length;
+      btn.textContent = n === 0 ? (col.allLabel || 'All') : n === 1 ? chosen()[0] : `${n} selected`;
+      btn.title = chosen().join(', ');
+      btn.classList.toggle('is-set', n > 0);
+    };
+
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'filter-multi-clear';
+    clear.textContent = 'Clear selection';
+    panel.appendChild(clear);
+
+    // A saved value whose option has gone (data changed under it) is kept, so the control
+    // never claims fewer filters than are in force.
+    const known = optionsFor(dataRows, i);
+    const all = [...known, ...chosen().filter(v => !known.some(k => norm(k) === norm(v)))];
+    const boxes = all.map(value => {
+      const label = document.createElement('label');
+      label.className = 'filter-multi-opt';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.value = value;
+      box.checked = chosen().some(v => norm(v) === norm(value));
+      const text = document.createElement('span');
+      text.textContent = value;
+      label.append(box, text);
+      panel.appendChild(label);
+      return box;
+    });
+
+    const commit = () => {
+      values[i] = boxes.filter(b => b.checked).map(b => b.value);
+      paint();
+      apply(entry);
+    };
+    boxes.forEach(b => b.addEventListener('change', commit));
+    clear.addEventListener('click', () => { boxes.forEach(b => { b.checked = false; }); commit(); });
+
+    btn.addEventListener('click', () => {
+      if (openMulti && openMulti.panel === panel) { closeMulti(); return; }
+      closeMulti();
+      const r = btn.getBoundingClientRect();
+      panel.hidden = false;
+      panel.style.minWidth = `${Math.max(r.width, 180)}px`;
+      panel.style.left = `${Math.round(Math.min(r.left, window.innerWidth - 260))}px`;
+      panel.style.top = `${Math.round(r.bottom + 4)}px`;
+      panel.style.maxHeight = `${Math.max(160, Math.min(320, window.innerHeight - r.bottom - 16))}px`;
+      btn.setAttribute('aria-expanded', 'true');
+      openMulti = { wrap, panel, btn };
+    });
+    wrap.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && openMulti) { e.preventDefault(); e.stopPropagation(); closeMulti(); btn.focus(); }
+      if (e.key === 'Enter') e.preventDefault();
+    });
+
+    paint();
+    wrap.append(btn, panel);
+    return wrap;
   }
 
   /** Builds the filter row itself. One `<tr>` in the head, one control per column. */
@@ -162,6 +269,12 @@ window.EduConFilters = (() => {
 
       const col = spec.columns.find(c => c.index === i);
       if (!col) { tr.appendChild(td); continue; }
+
+      if (col.type === 'multi') {
+        td.appendChild(buildMulti(entry, col, i, dataRows));
+        tr.appendChild(td);
+        continue;
+      }
 
       let control;
       if (col.type === 'select') {
@@ -283,8 +396,11 @@ window.EduConFilters = (() => {
     const entry = store.get(id);
     if (!entry) return [];
     return entry.spec.columns
-      .filter(c => (entry.values[c.index] ?? '') !== '')
-      .map(c => ({ label: c.label || `Column ${c.index + 1}`, value: entry.values[c.index] }));
+      .filter(c => isSet(entry.values[c.index]))
+      .map(c => {
+        const v = entry.values[c.index];
+        return { label: c.label || `Column ${c.index + 1}`, value: Array.isArray(v) ? v.join(', ') : v };
+      });
   }
 
   /** Is anything currently filtering this table? Used to word an empty state. */

@@ -751,6 +751,24 @@ h2 { font-size: var(--fs-md); }
 .total-row .col-name, .total-row .col-sl { z-index: 4; }
 .total-row.sub td { font-weight: 500; color: var(--text-secondary); border-top: 1px solid var(--grid); }
 
+.summary-status-row td {
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  font-weight: 500;
+  border-top: 1px solid var(--grid);
+  border-bottom: none;
+}
+.summary-status-row .col-total { font-weight: 700; color: var(--text-primary); }
+.summary-status-row .col-name, .summary-status-row .col-sl {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+}
+
+.grand-total-row td {
+  border-top: 2px solid var(--border-strong);
+}
+
 /* ---------- Reconciliation ---------- */
 
 .reconcile {
@@ -849,6 +867,63 @@ tr.filter-row th {
   font-weight: 600;
 }
 .filter-select { cursor: pointer; max-width: 100%; }
+
+/* Multi-select filter: a button that looks like the selects beside it, and a tick-box list. */
+.filter-multi-btn {
+  cursor: pointer;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 18px;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 10px) 55%, calc(100% - 6px) 55%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+.filter-multi-panel {
+  position: fixed;
+  z-index: 200;
+  overflow-y: auto;
+  padding: 4px;
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  box-shadow: 0 12px 28px -8px rgba(11, 11, 11, 0.35);
+}
+.filter-multi-panel[hidden] { display: none; }
+.filter-multi-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1.35;
+}
+.filter-multi-opt:hover { background: var(--wash); }
+.filter-multi-opt input { margin-top: 2px; accent-color: var(--accent); }
+.filter-multi-clear {
+  display: block;
+  width: 100%;
+  margin-bottom: 2px;
+  padding: 5px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
 /* Columns that hold prose want a usable filter box even though the text inputs are
    size=1; without a floor they collapse to a few pixels in a narrow column. */
 .dt-name .filter-input, .dt-college .filter-input, .dt-city .filter-input { min-width: 90px; }
@@ -1210,6 +1285,14 @@ tr.filter-row th {
    explains itself on hover. */
 .drill-table .is-over,
 .drill-table td.dt-total.is-over { color: var(--critical); }
+
+.voucher-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  cursor: pointer;
+}
+.voucher-link:hover { text-decoration-style: solid; }
 
 /* The totals row. Sticky to the bottom of the scroll region for the same reason the
    header is sticky to the top: on a 156-student list the sum is the one line the reader
@@ -1641,6 +1724,123 @@ dialog.dialog-wide.is-max[open] {
           mask-composite: exclude;
 }
 
+/* `.field` sets its own display, which beats the UA's [hidden] rule — the all-years list
+   hides the dialog's year select this way, and without this it stays on screen, empty. */
+.field[hidden] { display: none; }
+
+/* ---------- All-years tiles (page 1) ----------
+   Three equal tiles, then the RCP tile across the full width: its total on the left, the
+   year-wise distribution on the right. Every number is a <button>, so it is reachable by
+   keyboard and announced as a control; the ring on hover/focus is the same inset accent
+   ring the matrix's drill cells use, so "this opens something" reads the same everywhere. */
+.kpi-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 26px;
+}
+.kpi-heading { margin: 0; font-size: var(--fs-lg, 18px); font-weight: 650; letter-spacing: -0.01em; }
+.kpi-grid {
+  display: grid;
+  /* As many cards as fit on one line (seven at the full content width), then wrap. */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+.kpi-years-card { margin-top: 18px; }
+.kpi-error { grid-column: 1 / -1; margin: 0; }
+.kpi-error:empty { display: none; }
+
+.kpi-hit {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  padding: 20px 20px 22px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.kpi-hit:hover:not(:disabled) { box-shadow: inset 0 0 0 2px var(--accent); }
+.kpi-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.kpi-hit:disabled { cursor: default; }
+.kpi-value {
+  font-size: clamp(30px, 3vw, 44px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  margin-top: 8px;
+}
+.kpi-code { letter-spacing: -0.02em; }
+/* Two lines tall on every card, so the figures line up whether a title wraps or not. */
+.kpi-hit .eyebrow { min-height: 2.7em; }
+.kpi-sub { font-size: var(--fs-base); color: var(--text-secondary); line-height: 1.45; }
+
+.kpi-years-wrap { position: relative; z-index: 1; padding: 22px 26px; min-width: 0; }
+.kpi-years-title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.kpi-years { display: grid; gap: 4px; }
+.kpi-year {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.kpi-year:hover { box-shadow: inset 0 0 0 2px var(--accent); }
+.kpi-year:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.kpi-year-label { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.kpi-year-bar { height: 10px; border-radius: var(--radius-pill); background: var(--wash); overflow: hidden; }
+.kpi-year-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.kpi-year-n { text-align: right; font-variant-numeric: tabular-nums; }
+.kpi-note { margin: 10px 0 0; font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+.kpi-note:empty { display: none; }
+.kpi-multi:empty { display: none; }
+.kpi-multi { margin-top: 10px; overflow-x: auto; }
+.kpi-multi-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.kpi-multi-table th {
+  padding: 4px 10px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.kpi-multi-table td { padding: 6px 10px; border-top: 1px solid var(--border); white-space: nowrap; }
+.kpi-multi-table tbody tr { cursor: pointer; }
+.kpi-multi-table tbody tr:hover { box-shadow: inset 0 0 0 2px var(--accent); }
+.kpi-multi-table tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+@media (max-width: 460px) {
+  .kpi-grid { grid-template-columns: minmax(0, 1fr); }
+  .kpi-years-wrap { padding: 18px 16px; }
+}
+
 /* ---------- Lead tile: the figure ---------- */
 
 .stat { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
@@ -1856,7 +2056,7 @@ dialog.dialog-wide.is-max[open] {
 
   /* Tiles print as plain bordered blocks: the diffusion shadow turns to grey mud on
      paper, and the entrance animation would leave them at their opening opacity. */
-  .bento { display: block; }
+  .bento, .kpi-grid { display: block; }
   .bcard {
     break-inside: avoid;
     box-shadow: none;

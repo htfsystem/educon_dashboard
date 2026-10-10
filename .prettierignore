@@ -2,38 +2,5 @@ node_modules/
 package-lock.json
 data/
 *.log
-
-# 24KB of transcribed spreadsheet data, generated from EduCon-Code-Labels_01.xlsx.
-# Not hand-edited, so not hand-formatted.
+# 24KB of transcribed spreadsheet data — generated, not hand-edited.
 backend/services/codeLabels.js
-
-# 100KB of hand-written prose with deliberate line breaks, aligned tables and
-# hanging indents that carry meaning. Prettier reflows all of it. Never format this.
-CLAUDE.md
-
-# ---------------------------------------------------------------------------
-# Incremental adoption.
-#
-# Prettier was added after these files were written. Reformatting them in one pass
-# would produce a diff across every source file in the project — 2500 lines of CSS
-# among them — which would be unreviewable and would hide any real change inside it.
-# So they are exempt for now and `npm run format:check` stays green.
-#
-# To adopt a file: delete its line here, run `npm run format`, and commit that
-# reformat ON ITS OWN with no logic change in the same commit. One file per commit
-# keeps every diff readable.
-# ---------------------------------------------------------------------------
-backend/server.js
-backend/services/authService.js
-backend/services/pipelineService.js
-frontend/index.html
-frontend/css/app.css
-frontend/css/dashboard.css
-frontend/js/app.js
-frontend/js/columns.js
-frontend/js/dashboard.js
-frontend/js/filters.js
-frontend/js/students.js
-frontend/js/ui.js
-frontend/js/util.js
-frontend/js/xlsx.js

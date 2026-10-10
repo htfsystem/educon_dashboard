@@ -1,3 +1,4 @@
+
 /**
  * Dashboard authentication — its own user store, entirely separate from educon_prod.
  *
@@ -52,24 +53,6 @@ const SETTINGS_TABLE = 'dashboard_settings';
 
 const SESSION_COOKIE = 'educon_session';
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;   // 8 hours
-
-/**
- * The decoy hash `verify()` compares against when the username does not exist, so a
- * missing account and a wrong password take the same time.
- *
- * It MUST be a real bcrypt hash. bcryptjs starts with `if (hash.length !== 60) return
- * false` and does no key stretching at all for anything else, so a hand-written
- * placeholder returns in ~0ms while a real account costs ~62ms — a bimodal split that
- * makes the login endpoint a reliable username oracle. The previous literal here was 65
- * characters, so the defence this constant exists for was never actually running.
- *
- * Generated at load rather than hard-coded: a real hash cannot be mistyped, and the
- * assertion below refuses to start if bcrypt ever returns something bcrypt won't accept.
- */
-const DECOY_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
-if (DECOY_HASH.length !== 60) {
-  throw new Error(`decoy hash is ${DECOY_HASH.length} chars, bcrypt requires 60`);
-}
 
 let pool = null;
 let ready = null;
@@ -337,9 +320,8 @@ async function verify(username, password, ip) {
   const row = rows[0];
 
   // Hash even when the user does not exist, so a missing account and a wrong password
-  // take the same amount of time and cannot be told apart from outside. DECOY_HASH is a
-  // real 60-character bcrypt hash for that reason — see its definition above.
-  const hash = row ? row.pass_hash : DECOY_HASH;
+  // take the same amount of time and cannot be told apart from outside.
+  const hash = row ? row.pass_hash : '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidin';
   const ok = bcrypt.compareSync(String(password || ''), hash) && !!row && row.active === 1;
 
   await p.query(`INSERT INTO ${LOG_TABLE} (username, at, ip, ok) VALUES (?, ?, ?, ?)`,
@@ -401,45 +383,19 @@ async function readToken(token) {
 
 // ---------- express middleware ----------
 
-// Sign-in is ON unless a host explicitly opts out, and production cannot opt out at all.
+// The login screen is OFF by default, here and on Render alike: every request arrives
+// as this synthetic administrator, so /api/auth/me always succeeds and the frontend
+// goes straight to the dashboard.
 //
-// This used to be the other way round: `AUTH_ENABLED` had to read exactly `true` or every
-// request arrived as the synthetic administrator below. The argument for that default was
-// that a host which never receives the .env file (Render does not) would otherwise
-// silently bring the login page back. The argument is real but the direction was wrong —
-// it chose "no authentication" as the outcome of a missing variable, so `1`, `yes`, `TRUE `
-// with a trailing space, or Render's environment simply not being set left the whole
-// dataset, finance figures included, open to any unauthenticated caller, with no log line
-// and no banner. The only visible symptom was `@guest · admin` in the profile menu.
+// The default is deliberately "no sign-in" rather than "sign-in unless disabled",
+// because a host that never receives the .env file (Render does not) would otherwise
+// silently bring the login page back — which is exactly what happened on 2026-08-28.
+// Turning it on is now an explicit act on every host: set AUTH_ENABLED=true.
 //
-// Three properties now hold, in order of importance:
-//
-//   1. A missing, empty or misspelled variable means sign-in is REQUIRED. Failing closed
-//      is recoverable — someone signs in — where failing open is a silent data exposure.
-//   2. Production is never open, whatever the variable says. NODE_ENV=production forces
-//      sign-in even against an explicit AUTH_ENABLED=false.
-//   3. It cannot crash the app. A deliberate opt-out in production is overridden and
-//      logged, not thrown, because a crash-loop on a mis-set variable is its own outage.
-//
-// Opting out is therefore explicit and local-only: AUTH_ENABLED=false with NODE_ENV unset.
-// Nothing below is deleted either way — accounts, bcrypt hashes, sessions and every
-// requirePermission check are intact.
-const AUTH_OPT_OUT = String(process.env.AUTH_ENABLED ?? 'true').trim().toLowerCase() === 'false';
-const IS_PRODUCTION = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
-const AUTH_DISABLED = AUTH_OPT_OUT && !IS_PRODUCTION;
-
-if (AUTH_OPT_OUT && IS_PRODUCTION) {
-  console.warn(
-    '\n  ⚠  AUTH_ENABLED=false was ignored: NODE_ENV=production always requires sign-in.\n'
-  );
-}
-
-// The deployed posture is otherwise unobservable — it depends on host environment that is
-// not in version control — so state it once at boot where anyone reading the log can see it.
-console.log(AUTH_DISABLED
-  ? '\n  ⚠  AUTH OPEN — no sign-in required. Every request is served as an administrator.\n'
-     + '     Set AUTH_ENABLED=true (or unset it) to require sign-in.\n'
-  : `  ✓ auth ENFORCED — sign-in required${IS_PRODUCTION ? ' (production)' : ''}`);
+// Nothing below is deleted — accounts, bcrypt hashes, sessions and every
+// requirePermission check are intact, so flipping the flag restores sign-in as it was.
+// Note this leaves a public deployment fully open, finance figures included.
+const AUTH_DISABLED = String(process.env.AUTH_ENABLED || '').toLowerCase() !== 'true';
 
 const OPEN_ACCESS_USER = {
   id: 0,

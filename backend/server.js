@@ -212,15 +212,51 @@ app.get('/api/students', auth.requirePermission('view:summary'), route(async req
     : Number(req.query.etmId);
   if (etmId !== null && !Number.isInteger(etmId)) throw new Error('"etmId" must be a whole number');
 
+  // Which population the clicked number counts — see getStudentList. Named by the client
+  // so the figure on screen and the list behind it cannot be driven by different rules.
+  const scope = String(req.query.scope || 'assigned');
+  if (!['assigned', 'unassigned', 'all'].includes(scope)) throw new Error('Malformed "scope" parameter');
+
+  // Which column to filter on: 'case' (application_status), 'profile' (u_status from
+  // educon_user_profile), or 'grand' (application_status OR profile RCP).
+  const statusSource = String(req.query.statusSource || 'case');
+  if (!['case', 'profile', 'grand'].includes(statusSource)) throw new Error('Malformed "statusSource" parameter');
+
   const withMoney = !!req.user && req.user.permissions.includes('view:finance');
 
-  const students = await pipeline.getStudentList(pool, { year, etmId, statuses, withMoney });
+  const students = await pipeline.getStudentList(pool, { year, etmId, statuses, withMoney, scope, statusSource });
   return {
-    academicYear: year, etmId, statuses,
+    academicYear: year, etmId, statuses, scope,
     count: students.length,
     includesAmounts: withMoney,
     students
   };
+}));
+
+/**
+ * Drill-down for the all-years tiles: one row per distinct student, whatever years they
+ * appear in. Declared BEFORE /api/students/:studentId, which would otherwise swallow
+ * "all-time" as a student id. Amounts follow the session's view:finance, as above.
+ */
+app.get('/api/students/all-time', auth.requirePermission('view:summary'), route(async req => {
+  const population = String(req.query.population || '');
+  const withMoney = !!req.user && req.user.permissions.includes('view:finance');
+
+  // Not students at all: staff, system buckets and test accounts. Rows go out under the
+  // same `students` key so the list dialog needs no second code path; contact details
+  // follow the finance permission, decided here and never from a query parameter.
+  if (population === 'unassigned') {
+    const accounts = await pipeline.getUnassignedAccounts(pool, { withContact: withMoney });
+    return { population, count: accounts.length, includesAmounts: false, students: accounts };
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(pipeline.ALL_TIME_POPULATIONS, population)) {
+    throw new Error('Malformed "population" parameter');
+  }
+  // Optional: narrow to one academic year (validated against the years that exist).
+  const year = req.query.year ? await requireYear(req) : null;
+  const students = await pipeline.getAllTimeStudentList(pool, { population, withMoney, year });
+  return { population, year, count: students.length, includesAmounts: withMoney, students };
 }));
 
 /** One student's sanctioned / disbursed / pending figures, for every year they appear in. */
@@ -231,6 +267,13 @@ app.get('/api/students/:studentId', auth.requirePermission('view:finance'), rout
   const detail = await pipeline.getStudentDetail(pool, studentId);
   if (!detail.years.length) throw new Error(`No academic record found for student ${studentId}`);
   return detail;
+}));
+
+/** All payment vouchers for one student, de-duplicated. */
+app.get('/api/students/:studentId/vouchers', auth.requirePermission('view:finance'), route(async req => {
+  const studentId = Number(req.params.studentId);
+  if (!Number.isInteger(studentId)) throw new Error('"studentId" must be a whole number');
+  return pipeline.getStudentVouchers(pool, studentId);
 }));
 
 /** Totals per status across every academic year, for the trend chart. */
@@ -268,6 +311,18 @@ app.get('/api/overview', auth.requirePermission('view:dashboard'), route(async r
     assignedStatusTotals: report.assignedStatusTotals,
     reconciliation: report.reconciliation
   };
+}));
+
+/**
+ * Page 1 — the all-years tiles: latest student code, distinct Live / Live+RCP / RCP
+ * totals, and RCP per year. Not year-scoped, so it takes no `year` parameter.
+ */
+app.get('/api/overview/all-time', auth.requirePermission('view:dashboard'), route(async () => {
+  const [latestStudent, totals] = await Promise.all([
+    pipeline.getLatestStudent(pool),
+    pipeline.getAllTimeTotals(pool)
+  ]);
+  return { latestStudent, ...totals };
 }));
 
 app.get('*', (req, res) => {
