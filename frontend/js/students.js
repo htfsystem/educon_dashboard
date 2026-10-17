@@ -989,27 +989,15 @@
       rows.push({ cells: totalCells, height: 20 });
     }
 
-    // Sized by what the column holds: identifiers and tags stay narrow, the prose columns
-    // (college, specialization, university) get the room they need.
-    const width = h => {
-      const key = h.toLowerCase();
-      if (key.startsWith('sr')) return 6;
-      // Before the sanction test below — "Sanction auth" holds a two-letter login code,
-      // not a seven-figure amount.
-      if (key.endsWith('auth')) return 14;
-      // Wide enough for "Pending disbursement" over a seven-figure ₹ amount.
-      if (key.includes('sanction') || key.includes('disburse')) return 17;
-      if (key.includes('college') && !key.includes('city')) return 34;
-      if (key.includes('specialization') || key.includes('university')) return 30;
-      if (key.includes('status') || key.includes('student') || key.includes('etm')) return 24;
-      return 18;
-    };
+    // Column widths sized to the actual content. The title and info rows are merged and
+    // their text lives only in column A — fromRow skips them so Sr. No stays narrow.
+    const cols = X.autoCols(rows, { fromRow: HEAD_ROW - 1 });
 
     // The filename says which cell, whose, which year, and whether it is a subset — the
     // four things someone needs to know from a file sitting in a Downloads folder.
     const stamp = filters.length ? '-filtered' : '';
     X.save(
-      [{ name: listCtx.colLabel, rows, merges, cols: headers.map(h => ({ w: width(h) })), freezeRow: HEAD_ROW }],
+      [{ name: listCtx.colLabel, rows, merges, cols, freezeRow: HEAD_ROW }],
       `${X.safeName(`EduCon-${listCtx.colLabel}-${listCtx.who}-${yearText}${stamp}-${X.dateStamp()}`)}.xlsx`
     );
   }

@@ -306,6 +306,36 @@ ${rels}
   const safeName = s => String(s ?? '').replace(/[\\/:*?"<>|]+/g, '-')
     .replace(/\s+/g, ' ').trim().replace(/^[.-]+|[.-]+$/g, '') || 'export';
 
+  /**
+   * Auto-fit column widths from cell content.
+   *
+   * Scans every row from `fromRow` (0-based) onward. Rows whose first cell carries a
+   * style listed in `skipStyles` are skipped — those are merged label/title rows whose
+   * long text belongs to one visual cell and must not widen all columns below it.
+   *
+   * Returns one { w } per column in the same units Excel's <col width="…"> uses:
+   * roughly "characters of '0' in Calibri 11", so the raw character count maps fairly
+   * well. A `pad` of 2 adds breathing room; `minW` / `maxW` bound the result so tiny
+   * index columns and very-long prose columns both stay readable.
+   */
+  function autoCols(rows, { fromRow = 0, minW = 6, maxW = 60, pad = 2, skipStyles = [] } = {}) {
+    const skip = new Set(skipStyles);
+    const widths = [];
+    for (let ri = fromRow; ri < rows.length; ri++) {
+      const row = rows[ri];
+      if (!row || !row.cells || !row.cells.length) continue;
+      const first = row.cells[0];
+      const fs = first && typeof first === 'object' ? first.s : undefined;
+      if (fs !== undefined && skip.has(fs)) continue;
+      row.cells.forEach((cell, ci) => {
+        const v = (cell && typeof cell === 'object' && !Array.isArray(cell)) ? cell.v : cell;
+        const len = (v === null || v === undefined || v === '') ? 0 : String(v).length;
+        if (len > (widths[ci] || 0)) widths[ci] = len;
+      });
+    }
+    return widths.map(w => ({ w: Math.min(maxW, Math.max(minW, (w || minW) + pad)) }));
+  }
+
   /** Today's date as DD-MMM-YY, e.g. 17-oct-26. */
   function dateStamp() {
     const d = new Date();
@@ -315,5 +345,5 @@ ${rels}
     return `${day}-${mon}-${yr}`;
   }
 
-  return { S, colLetter, workbook, save, safeName, dateStamp };
+  return { S, colLetter, workbook, save, safeName, dateStamp, autoCols };
 })();

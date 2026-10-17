@@ -693,11 +693,13 @@
     });
     merges.push(`A${sheet.length}:C${sheet.length}`);
 
-    // Wide enough that every header label wraps to at most two lines and stays readable.
-    const cols = [
-      { w: 5 }, { w: 32 }, { w: 10 }, { w: 9 },
-      ...COLUMNS.map(() => ({ w: 15 }))
-    ];
+    // Column widths sized to the content. Section bands, subtotals and the grand total
+    // are merged rows whose label sits only in column A — skipping them keeps the Sl
+    // column from being inflated to match the full label length.
+    const cols = X.autoCols(sheet, {
+      fromRow: HEAD_ROW - 1,
+      skipStyles: [S.sect, S.totL, S.grandL]
+    });
 
     // Sheet 2 — the column definitions only: which exact database statuses sit behind
     // each dashboard column. The reconciliation figures live on the dashboard, not here.
@@ -713,7 +715,7 @@
 
     X.save([
       { name: 'Status Summary', rows: sheet, merges, cols, freezeRow: HEAD_ROW },
-      { name: 'Notes & Definitions', rows: notes, merges: nMerges, cols: [{ w: 30 }, { w: 46 }] }
+      { name: 'Notes & Definitions', rows: notes, merges: nMerges, cols: X.autoCols(notes, { skipStyles: [S.title] }) }
     ], `EduCon-Status-Summary-${r.academicYear}-${X.dateStamp()}.xlsx`);
   }
 
