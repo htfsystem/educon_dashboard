@@ -259,14 +259,17 @@
       placeholder: 'Search ID…', sortable: true,
       text: s => s.code },
     { key: 'name',    label: 'Student',        cls: 'dt-name',    filter: 'text',
+      sortable: true,
       text: s => s.name },
     { key: 'status',  label: 'Current status', cls: 'dt-status',  filter: 'select',
+      sortable: true,
       text: s => s.status, html: s => statusTag(s.status) },
     // Only on the all-years lists, where a row stands for a student rather than for a
     // student-year and the reader needs to know which year its figures belong to.
     { key: 'academicYear', label: 'Academic year', cls: 'dt-year', filter: 'select',
       text: s => s.academicYear },
     { key: 'handler', label: 'ETM / ATM',      cls: 'dt-handler', filter: 'select',
+      sortable: true,
       text: s => (s.handler ? s.handler.name : ''),
       html: s => (s.handler
         ? `${esc(s.handler.name)}<span class="dt-sub">${esc(s.handler.loginId)}</span>`
@@ -390,49 +393,20 @@
     });
   }
 
-  /* ---------- Sorting, on Student ID and nothing else ----------
+  /* ---------- Multi-column sorting (2026-10-17) ----------
    *
-   * Asked for on 2026-09-05. The list arrives in the server's order — student name, A→Z —
-   * and the business reads it by student code as often as by name, in both directions.
+   * `sortKeys` is an ordered array of { key, dir } — first entry is the primary sort,
+   * second is the secondary tiebreaker, and so on. An empty array means the default
+   * pipeline order. Clicking a column header cycles it: none → asc → desc → none.
+   * Clicking a column that is not yet active inserts it at the front (primary) and
+   * demotes the previous primary to secondary.
    *
-   * THREE STATES, NOT TWO: ascending, descending, and back to the name order the list
-   * opens in. A plain asc/desc toggle would leave no way back to the default without
-   * closing the dialog and losing the filters with it. The header's tooltip names what the
-   * NEXT click does, the same convention the summary page's empty-rows chip follows, so
-   * the control can never contradict the state it is in.
-   *
-   * The sort is a reading preference, like the maximised size, and so persists across
-   * openings — unlike the filters, which are forgotten on close. The difference is that a
-   * sort hides nothing: arriving at a new cell re-sorted shows every student it should,
-   * while arriving pre-filtered shows fewer and reads as missing data.
+   * Sortable columns: Student ID, Student name, Current status, ETM/ATM.
+   * The sort is a reading preference and persists across dialog openings; filters do not.
    */
-  const SORT_CYCLE = [0, 1, -1];        // default -> ascending -> descending -> default
-  let listSortDir = 0;
+  let sortKeys = []; // [{ key, dir }] — primary first; [] = pipeline order
 
-  /* Student codes are a letter and a number ("e617", "E747"), and the handful of students
-     with no code at all fall back to their numeric id. `numeric` is what puts e9 before
-     e10 rather than after it; `sensitivity: 'base'` is what stops the upper-case E-codes
-     sorting as a separate block from the lower-case ones. Ties fall back to the name, so
-     the order is total and a re-render never reshuffles equal rows. */
-  const byCode = dir => (a, b) =>
-    dir * String(a.code ?? '').localeCompare(String(b.code ?? ''), undefined,
-      { numeric: true, sensitivity: 'base' })
-    || String(a.name ?? '').localeCompare(String(b.name ?? ''));
-
-  /* ---------- The default order is the pipeline itself (2026-09-08) ----------
-   *
-   * Asked for directly: the list should open in status order — the CREATED students, then
-   * the SUBMITTED ones, and so on — rather than alphabetically by name. A list read to see
-   * where a cohort has got to is read down the pipeline, and a Total or Grand Total cell
-   * mixes several statuses together.
-   *
-   * The order comes from `js/columns.js` rather than from a second list written here, so
-   * the sequence down a list is by construction the same left-to-right sequence the matrix
-   * columns are in. A status not among the 7 reported columns sorts to the end rather than
-   * to the front, where an unrecognised value would look like the start of the pipeline.
-   * Ties fall back to the name, so the order is total and a re-render never reshuffles
-   * students who share a status.
-   */
+  /* The pipeline default — status order, ties broken by name. */
   const STATUS_RANK = new Map(COLUMNS.flatMap(c => c.statuses).map((s, i) => [s, i]));
   const statusRank = s => (STATUS_RANK.has(s) ? STATUS_RANK.get(s) : STATUS_RANK.size);
 
@@ -440,14 +414,47 @@
     statusRank(a.status) - statusRank(b.status)
     || String(a.name ?? '').localeCompare(String(b.name ?? ''));
 
-  const sortStudents = students =>
-    [...students].sort(listSortDir === 0 ? byStatus : byCode(listSortDir));
+  function compareByKey(a, b, key, dir) {
+    let cmp = 0;
+    if (key === 'code') {
+      cmp = String(a.code ?? '').localeCompare(String(b.code ?? ''), undefined,
+        { numeric: true, sensitivity: 'base' });
+    } else if (key === 'name') {
+      cmp = String(a.name ?? '').localeCompare(String(b.name ?? ''));
+    } else if (key === 'status') {
+      cmp = statusRank(a.status) - statusRank(b.status);
+    } else if (key === 'handler') {
+      cmp = String(a.handler?.name ?? '').localeCompare(String(b.handler?.name ?? ''));
+    }
+    return dir * cmp;
+  }
 
-  /** The tooltip names the next click's effect, never the current state. */
-  const nextSortLabel = dir => (
-    dir === 0 ? 'Sort by Student ID, A → Z'
-      : dir === 1 ? 'Sort by Student ID, Z → A'
-        : 'Clear the sort — back to pipeline status order');
+  const sortStudents = students => {
+    if (!sortKeys.length) return [...students].sort(byStatus);
+    return [...students].sort((a, b) => {
+      for (const { key, dir } of sortKeys) {
+        const cmp = compareByKey(a, b, key, dir);
+        if (cmp !== 0) return cmp;
+      }
+      return String(a.name ?? '').localeCompare(String(b.name ?? ''));
+    });
+  };
+
+  function toggleSort(key) {
+    const i = sortKeys.findIndex(k => k.key === key);
+    if (i === -1) {
+      sortKeys = [{ key, dir: 1 }, ...sortKeys];       // new column → primary, asc
+    } else if (sortKeys[i].dir === 1) {
+      sortKeys = sortKeys.map((k, idx) => (idx === i ? { key, dir: -1 } : k)); // flip to desc
+    } else {
+      sortKeys = sortKeys.filter((_, idx) => idx !== i); // remove
+    }
+  }
+
+  const nextSortLabelFor = (label, dir) => (
+    dir === 0 ? `Sort by ${label} A → Z`
+      : dir === 1 ? `Sort by ${label} Z → A`
+        : `Clear ${label} sort (back to pipeline order)`);
 
   const ariaSort = dir => (dir === 1 ? 'ascending' : dir === -1 ? 'descending' : 'none');
 
@@ -460,7 +467,7 @@
    * `totals` adds the summing row under the money columns. It is off in the preview for
    * the same reason sorting is: a glance beside a number does not need a ledger foot.
    */
-  function listTable(students, { clickable, keys, id, sortDir, totals }) {
+  function listTable(students, { clickable, keys, id, sortKeys: sk, totals }) {
     if (!students.length) {
       return '<p class="drill-empty">No students in this cell.</p>';
     }
@@ -472,15 +479,19 @@
        copies a header cell's classes onto the filter cell beneath it, so anything styled
        on the th itself would also paint the filter box below as a sort control. */
     const head = cols.map(c => {
-      if (sortDir === undefined || !c.sortable) {
+      if (sk === undefined || !c.sortable) {
         return `<th class="${c.cls}">${esc(c.label)}</th>`;
       }
-      const caret = sortDir === 0 ? ''
-        : `<svg class="ico sort-arrow${sortDir === -1 ? ' is-desc' : ''}" viewBox="0 0 24 24"` +
+      const entry = sk ? sk.find(k => k.key === c.key) : null;
+      const dir = entry ? entry.dir : 0;
+      const priority = sk ? sk.findIndex(k => k.key === c.key) + 1 : 0; // 0 when absent
+      const caret = dir === 0 ? ''
+        : `<svg class="ico sort-arrow${dir === -1 ? ' is-desc' : ''}" viewBox="0 0 24 24"` +
           ' aria-hidden="true"><use href="#icoCaret"/></svg>';
-      return `<th class="${c.cls} is-sortable" aria-sort="${ariaSort(sortDir)}"><button` +
-        ` type="button" class="th-sort" title="${esc(nextSortLabel(sortDir))}">${
-          esc(c.label)}${caret}</button></th>`;
+      const badge = priority > 1 ? `<sup class="sort-priority">${priority}</sup>` : '';
+      return `<th class="${c.cls} is-sortable" aria-sort="${ariaSort(dir)}" data-sort-key="${c.key}"><button` +
+        ` type="button" class="th-sort" title="${esc(nextSortLabelFor(c.label, dir))}">${
+          esc(c.label)}${caret}${badge}</button></th>`;
     }).join('');
     const body = students.map((s, i) => `
       <tr${clickable ? ` tabindex="0" role="button" data-student="${s.studentId}"${
@@ -744,7 +755,7 @@
     const clickable = can('view:finance') && unit === 'student';
 
     listBody.innerHTML = listTable(students, {
-      clickable, id: 'drillListTable', sortDir: listSortDir, totals: true
+      clickable, id: 'drillListTable', sortKeys, totals: true
     });
 
     listShown = null;
@@ -755,6 +766,11 @@
     // are read off the rendered cells — the same text the user filters against.
     const table = $('drillListTable');
     if (table) {
+      // Both the header row and the filter row are sticky. Set --drill-head-h so the
+      // filter row's `top` is pushed below the header row instead of covering it.
+      const headH = table.tHead?.rows[0]?.offsetHeight;
+      if (headH) table.style.setProperty('--drill-head-h', `${headH}px`);
+
       window.EduConFilters.mount(table, filterSpec(students, null, shown => {
         listShown = shown;
         listFoot.textContent = listFootText();
@@ -768,20 +784,17 @@
     updateTotals();
     syncExportButton(true);
 
-    // The header button is a new node after every render, so the listener is bound here
-    // rather than once, and focus is moved onto the replacement. Without that, Enter on
-    // the header would drop the user back to the top of the dialog and reversing a sort
-    // would cost a second journey through the tab order. A mouse click is unaffected —
-    // the ring is :focus-visible, so it shows for the keyboard only.
-    const sortBtn = listBody.querySelector('.th-sort');
-    if (sortBtn) {
-      sortBtn.addEventListener('click', () => {
-        const i = SORT_CYCLE.indexOf(listSortDir);
-        listSortDir = SORT_CYCLE[(i + 1) % SORT_CYCLE.length];
+    // Each sortable column header is a new node after every render, so listeners are
+    // bound here. Focus is returned to the clicked button after the re-render so
+    // keyboard users stay in place without tabbing back.
+    listBody.querySelectorAll('th[data-sort-key] .th-sort').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.closest('th').dataset.sortKey;
+        toggleSort(key);
         renderList();
-        listBody.querySelector('.th-sort')?.focus();
+        listBody.querySelector(`th[data-sort-key="${key}"] .th-sort`)?.focus();
       });
-    }
+    });
 
     if (!clickable) return;
     listBody.querySelectorAll('[data-student]').forEach(row => {
@@ -896,9 +909,12 @@
     // implying it might be a subset. The sort is stamped for the same reason the filters
     // are — the rows come out in the order on screen, so the sheet says what that order is
     // rather than leaving a reader to guess why it is not alphabetical by name.
-    const sortNote = listSortDir === 0
+    const sortNote = sortKeys.length === 0
       ? '     ·     Sorted by pipeline status'
-      : `     ·     Sorted by Student ID (${listSortDir === 1 ? 'A → Z' : 'Z → A'})`;
+      : '     ·     Sorted by: ' + sortKeys.map(({ key, dir }) => {
+          const col = LIST_COLUMNS.find(c => c.key === key);
+          return `${col ? col.label : key} (${dir === 1 ? 'A → Z' : 'Z → A'})`;
+        }).join(', then ');
     rows.push({
       cells: [{
         v: (filters.length
@@ -938,6 +954,8 @@
           // anyone does with this sheet is total a filtered set of students.
           if (td.dataset.amount !== undefined) {
             const n = Number(td.dataset.amount);
+            // Support Year is a count, not a currency — use plain number style.
+            if (td.dataset.money === 'supportYears') return { v: n || '', s: S.num };
             // Nil goes out blank, exactly as it reads on screen — the cell keeps the
             // money style so the column still totals and formats as one.
             return { v: n || '', s: S.money };
@@ -962,6 +980,7 @@
       const totalCells = headers.map(() => ({ v: '', s: S.grandL }));
       totalCells[0] = { v: 'Total', s: S.grandL };
       moneyCols.forEach(key => {
+        if (key === 'supportYears') return;
         const i = moneyIndex[key];
         const sum = bodyRows.reduce((n, tr) =>
           n + (Number(tr.cells[i]?.dataset.amount) || 0), 0);
@@ -991,7 +1010,7 @@
     const stamp = filters.length ? '-filtered' : '';
     X.save(
       [{ name: listCtx.colLabel, rows, merges, cols: headers.map(h => ({ w: width(h) })), freezeRow: HEAD_ROW }],
-      `${X.safeName(`EduCon-${listCtx.colLabel}-${listCtx.who}-${yearText}${stamp}`)}.xlsx`
+      `${X.safeName(`EduCon-${listCtx.colLabel}-${listCtx.who}-${yearText}${stamp}-${X.dateStamp()}`)}.xlsx`
     );
   }
 
@@ -1164,32 +1183,6 @@
    * listeners. Delegation survives all of it.
    */
   function bind(table) {
-    table.addEventListener('mouseover', e => {
-      const cell = e.target.closest('td[data-col]');
-      if (!cell || !table.contains(cell)) return;
-
-      // The hide scheduled when the pointer left the previous cell has to be cancelled
-      // here. Without this it fires mid-wait and hidePop clears the pending show, so
-      // moving straight from one number to another leaves the first cell's list on
-      // screen under the second cell's pointer.
-      clearTimeout(hideTimer);
-      if (cell === openCell) return;
-
-      clearTimeout(hoverTimer);
-      // Hover intent: sweeping the pointer across a row of numbers must not fire off a
-      // request per cell.
-      hoverTimer = setTimeout(() => showPop(cell), 200);
-    });
-
-    table.addEventListener('mouseout', e => {
-      const cell = e.target.closest('td[data-col]');
-      if (!cell) return;
-      clearTimeout(hoverTimer);
-      // Leaving toward the popover itself must not close it.
-      if (e.relatedTarget && pop.contains(e.relatedTarget)) return;
-      scheduleHide();
-    });
-
     table.addEventListener('click', e => {
       const cell = e.target.closest('td[data-col]');
       if (!cell || !table.contains(cell)) return;

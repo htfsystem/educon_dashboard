@@ -967,7 +967,10 @@ tr.filter-row th {
  *
  * Scoped to `.drill-table`: the Users page tables are laid out by their own content and
  * were never distorted this way. */
-.drill-table tr.filter-row th { height: 40px; }
+/* top pushed below the header row so both rows can be sticky without overlapping.
+   The exact header height is measured after render and written as --drill-head-h on
+   the table element; 36px is the fallback for the first paint before JS runs. */
+.drill-table tr.filter-row th { height: 40px; top: var(--drill-head-h, 36px); }
 .drill-table tr.filter-row .filter-input {
   position: absolute;
   top: 50%;

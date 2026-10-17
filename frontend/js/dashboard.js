@@ -714,7 +714,7 @@
     X.save([
       { name: 'Status Summary', rows: sheet, merges, cols, freezeRow: HEAD_ROW },
       { name: 'Notes & Definitions', rows: notes, merges: nMerges, cols: [{ w: 30 }, { w: 46 }] }
-    ], `EduCon-Status-Summary-${r.academicYear}.xlsx`);
+    ], `EduCon-Status-Summary-${r.academicYear}-${X.dateStamp()}.xlsx`);
   }
 
 

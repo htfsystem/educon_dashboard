@@ -208,9 +208,9 @@ window.EduConXlsx = (() => {
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
 <cellXfs count="15">
  <xf xfId="0" numFmtId="0" fontId="0" fillId="0" borderId="0"/>
- <xf xfId="0" numFmtId="0" fontId="1" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
- <xf xfId="0" numFmtId="0" fontId="2" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
- <xf xfId="0" numFmtId="0" fontId="3" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="1" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="2" fillId="0" borderId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+ <xf xfId="0" numFmtId="0" fontId="3" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>
  <xf xfId="0" numFmtId="0" fontId="0" fillId="0" borderId="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
  <xf xfId="0" numFmtId="0" fontId="0" fillId="0" borderId="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
  <xf xfId="0" numFmtId="0" fontId="4" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
@@ -306,5 +306,14 @@ ${rels}
   const safeName = s => String(s ?? '').replace(/[\\/:*?"<>|]+/g, '-')
     .replace(/\s+/g, ' ').trim().replace(/^[.-]+|[.-]+$/g, '') || 'export';
 
-  return { S, colLetter, workbook, save, safeName };
+  /** Today's date as DD-MMM-YY, e.g. 17-oct-26. */
+  function dateStamp() {
+    const d = new Date();
+    const day = String(d.getDate()).padStart(2, '0');
+    const mon = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'][d.getMonth()];
+    const yr = String(d.getFullYear()).slice(-2);
+    return `${day}-${mon}-${yr}`;
+  }
+
+  return { S, colLetter, workbook, save, safeName, dateStamp };
 })();
